@@ -943,7 +943,7 @@ function renderMSSidebar(){
     <div class="sb-sect">Views</div>
     <button class="sb-btn ${msView==='overview'?'active':''}" onclick="setMSView('overview')"><span class="sb-icon">📊</span>Overview</button>
     <button class="sb-btn ${msView==='engagement'?'active':''}" onclick="setMSView('engagement')"><span class="sb-icon">🏃</span>Patient Engagement</button>
-    <button class="sb-btn ${msView==='kitdispatch'?'active':''}" onclick="setMSView('kitdispatch')"><span class="sb-icon">📦</span>Kit Dispatch</button>
+    <button class="sb-btn ${msView==='logistics'?'active':''}" onclick="setMSView('logistics')"><span class="sb-icon">🚚</span>Logistics</button>
   `;
 }
 function setMSView(v){msView=v;renderMSSidebar();renderMSContent();}
@@ -971,13 +971,13 @@ function renderMSContent(){
   let html;
   if(msView==='overview')html=buildMSOV();
   else if(msView==='engagement')html=buildMSEngage();
-  else if(msView==='kitdispatch')html=buildMSKit();
+  else if(msView==='logistics')html=buildMSLog();
   else html=buildMSOV();
   document.getElementById('content').innerHTML=html;
   setTimeout(()=>{
     if(msView==='overview')initMSOV();
     else if(msView==='engagement')initMSEngage();
-    else if(msView==='kitdispatch')initMSKit();
+    else if(msView==='logistics')initMSLog();
   },40);
 }
 
@@ -1671,6 +1671,308 @@ function initDiagTeam(){
       ttColors.slice(0, ttRows.length)
     );
   }catch(e){}
+}
+
+
+// ══════════════════════════════════════════════════════
+//  MYSAATHI LOGISTICS MODULE
+// ══════════════════════════════════════════════════════
+const LOGISTICS = {"lookup":{"|":{"total":416,"delivered":240,"pending":176,"rto":2,"others":174,"freight_total":182677.6,"freight_avg":439.13,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":8,"DELIVERED":240,"UNDELIVERED-1st Attempt":4,"REACHED DESTINATION HUB":11,"CANCELED":2,"UNDELIVERED-2nd Attempt":3,"UNDELIVERED-3rd Attempt":4,"RTO IN TRANSIT":2,"PICKED UP":2},"deliv_by_month":{"April":120,"March":120}},"|Delivered":{"total":240,"delivered":240,"pending":0,"rto":0,"others":0,"freight_total":115448.0,"freight_avg":481.03,"status_counts":{"DELIVERED":240},"deliv_by_month":{"April":120,"March":120}},"|Pending":{"total":176,"delivered":0,"pending":176,"rto":2,"others":174,"freight_total":67229.6,"freight_avg":381.99,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":8,"UNDELIVERED-1st Attempt":4,"REACHED DESTINATION HUB":11,"CANCELED":2,"UNDELIVERED-2nd Attempt":3,"UNDELIVERED-3rd Attempt":4,"RTO IN TRANSIT":2,"PICKED UP":2},"deliv_by_month":{}},"|RTO":{"total":2,"delivered":0,"pending":2,"rto":2,"others":0,"freight_total":2272.0,"freight_avg":1136.0,"status_counts":{"RTO IN TRANSIT":2},"deliv_by_month":{}},"|Others":{"total":174,"delivered":0,"pending":174,"rto":0,"others":174,"freight_total":64957.6,"freight_avg":373.32,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":8,"UNDELIVERED-1st Attempt":4,"REACHED DESTINATION HUB":11,"CANCELED":2,"UNDELIVERED-2nd Attempt":3,"UNDELIVERED-3rd Attempt":4,"PICKED UP":2},"deliv_by_month":{}},"March|":{"total":227,"delivered":215,"pending":12,"rto":2,"others":10,"freight_total":111402.2,"freight_avg":490.76,"status_counts":{"DELIVERED":215,"UNDELIVERED-3rd Attempt":4,"IN TRANSIT-EN-ROUTE":1,"RTO IN TRANSIT":2,"PICKED UP":2,"UNDELIVERED-2nd Attempt":1,"CANCELED":1,"UNDELIVERED-1st Attempt":1},"deliv_by_month":{"April":95,"March":120}},"March|Delivered":{"total":215,"delivered":215,"pending":0,"rto":0,"others":0,"freight_total":105399.0,"freight_avg":490.23,"status_counts":{"DELIVERED":215},"deliv_by_month":{"April":95,"March":120}},"March|Pending":{"total":12,"delivered":0,"pending":12,"rto":2,"others":10,"freight_total":6003.2,"freight_avg":500.27,"status_counts":{"UNDELIVERED-3rd Attempt":4,"IN TRANSIT-EN-ROUTE":1,"RTO IN TRANSIT":2,"PICKED UP":2,"UNDELIVERED-2nd Attempt":1,"CANCELED":1,"UNDELIVERED-1st Attempt":1},"deliv_by_month":{}},"March|RTO":{"total":2,"delivered":0,"pending":2,"rto":2,"others":0,"freight_total":2272.0,"freight_avg":1136.0,"status_counts":{"RTO IN TRANSIT":2},"deliv_by_month":{}},"March|Others":{"total":10,"delivered":0,"pending":10,"rto":0,"others":10,"freight_total":3731.2,"freight_avg":373.12,"status_counts":{"UNDELIVERED-3rd Attempt":4,"IN TRANSIT-EN-ROUTE":1,"PICKED UP":2,"UNDELIVERED-2nd Attempt":1,"CANCELED":1,"UNDELIVERED-1st Attempt":1},"deliv_by_month":{}},"April|":{"total":189,"delivered":25,"pending":164,"rto":0,"others":164,"freight_total":71275.4,"freight_avg":377.12,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":7,"DELIVERED":25,"UNDELIVERED-1st Attempt":3,"REACHED DESTINATION HUB":11,"CANCELED":1,"UNDELIVERED-2nd Attempt":2},"deliv_by_month":{"April":25}},"April|Delivered":{"total":25,"delivered":25,"pending":0,"rto":0,"others":0,"freight_total":10049.0,"freight_avg":401.96,"status_counts":{"DELIVERED":25},"deliv_by_month":{"April":25}},"April|Pending":{"total":164,"delivered":0,"pending":164,"rto":0,"others":164,"freight_total":61226.4,"freight_avg":373.33,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":7,"UNDELIVERED-1st Attempt":3,"REACHED DESTINATION HUB":11,"CANCELED":1,"UNDELIVERED-2nd Attempt":2},"deliv_by_month":{}},"April|RTO":{"total":0,"delivered":0,"pending":0,"rto":0,"others":0,"freight_total":0,"freight_avg":0,"status_counts":{},"deliv_by_month":{}},"April|Others":{"total":164,"delivered":0,"pending":164,"rto":0,"others":164,"freight_total":61226.4,"freight_avg":373.33,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":7,"UNDELIVERED-1st Attempt":3,"REACHED DESTINATION HUB":11,"CANCELED":1,"UNDELIVERED-2nd Attempt":2},"deliv_by_month":{}}},"months":["March","April"],"statuses":["CANCELED","DELIVERED","FC MANIFEST GENERATED","IN TRANSIT","IN TRANSIT-EN-ROUTE","PICKED UP","PICKUP EXCEPTION","REACHED DESTINATION HUB","RTO IN TRANSIT","SHIPPED","UNDELIVERED-1st Attempt","UNDELIVERED-2nd Attempt","UNDELIVERED-3rd Attempt"],"monthly_trend":{"March":{"total":227,"delivered":215,"pending":12,"rto":2,"others":10,"freight_total":111402.2,"freight_avg":490.76,"status_counts":{"DELIVERED":215,"UNDELIVERED-3rd Attempt":4,"IN TRANSIT-EN-ROUTE":1,"RTO IN TRANSIT":2,"PICKED UP":2,"UNDELIVERED-2nd Attempt":1,"CANCELED":1,"UNDELIVERED-1st Attempt":1},"deliv_by_month":{"April":95,"March":120}},"April":{"total":189,"delivered":25,"pending":164,"rto":0,"others":164,"freight_total":71275.4,"freight_avg":377.12,"status_counts":{"SHIPPED":46,"FC MANIFEST GENERATED":2,"IN TRANSIT":91,"PICKUP EXCEPTION":1,"IN TRANSIT-EN-ROUTE":7,"DELIVERED":25,"UNDELIVERED-1st Attempt":3,"REACHED DESTINATION HUB":11,"CANCELED":1,"UNDELIVERED-2nd Attempt":2},"deliv_by_month":{"April":25}}}};
+
+// ── State ──
+let logMo    = '';   // '' = All months
+let logStatus = '';  // '' = All, 'Delivered', 'Pending', 'RTO', 'Others'
+
+function logKey(mo, sg){ return `${mo||''}|${sg||''}`; }
+function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,status_counts:{},deliv_by_month:{}}; }
+
+// ── Filter Bar ──
+function logFilterBar(){
+  const moOpts = LOGISTICS.months.map(m => `<option value="${m}" ${logMo===m?'selected':''}>${m}</option>`).join('');
+  const sgDefs = [
+    {val:'',         label:'All'},
+    {val:'Delivered',label:'Delivered'},
+    {val:'Pending',  label:'Pending'},
+    {val:'RTO',      label:'RTO'},
+    {val:'Others',   label:'Others'},
+  ];
+  const sgBtns = sgDefs.map(s =>
+    `<button class="cgm-tog ${logStatus===s.val?'active':''}" onclick="setLogFilter('status','${s.val}')">${s.label}</button>`
+  ).join('');
+  return `<div class="cgm-filter-bar" style="flex-wrap:wrap;gap:16px">
+    <div class="cfb-group">
+      <span class="cfb-label">📅 Month</span>
+      <select class="month-select" onchange="setLogFilter('mo',this.value)">
+        <option value="" ${!logMo?'selected':''}>All Months</option>
+        ${moOpts}
+      </select>
+    </div>
+    <div class="cfb-divider"></div>
+    <div class="cfb-group">
+      <span class="cfb-label">📦 Status</span>
+      ${sgBtns}
+    </div>
+    <div class="cfb-divider"></div>
+    <button class="cfb-reset" onclick="resetLogFilters()">↺ Reset</button>
+  </div>`;
+}
+function setLogFilter(key, val){
+  if(key==='mo') logMo=val;
+  else if(key==='status') logStatus=(logStatus===val&&val!=='')?'':val;
+  renderMSContent();
+}
+function resetLogFilters(){ logMo=''; logStatus=''; renderMSContent(); }
+
+// ── Build Logistics view ──
+function buildMSLog(){
+  return `
+  <div class="page-header">
+    <div class="page-title">💊 Mysaathi — Logistics</div>
+    <div class="page-sub">Order tracking · Delivery status · Freight analysis</div>
+  </div>
+  ${logFilterBar()}
+  <div class="kpi-grid" id="log_kpis"></div>
+  <div class="cg cg2" style="margin-bottom:20px">
+    <div class="cc">
+      <div class="cc-hdr"><div class="cc-title">Status Breakdown</div><div class="cc-sub" id="log_status_sub"></div></div>
+      <div class="cw h260"><canvas id="log_status_donut"></canvas></div>
+    </div>
+    <div class="cc">
+      <div class="cc-hdr"><div class="cc-title">Order Flow</div><div class="cc-sub">Total vs Delivered vs Pending</div></div>
+      <div class="cw h260"><canvas id="log_flow_bar"></canvas></div>
+    </div>
+  </div>
+  <div class="cg cg2" style="margin-bottom:20px">
+    <div class="cc">
+      <div class="cc-hdr"><div class="cc-title">Pending Split</div><div class="cc-sub">RTO vs Others</div></div>
+      <div class="cw h200"><canvas id="log_pending_donut"></canvas></div>
+    </div>
+    <div class="cc">
+      <div class="cc-hdr"><div class="cc-title">Freight Analysis</div><div class="cc-sub">Per month breakdown</div></div>
+      <div class="cw h200"><canvas id="log_freight_bar"></canvas></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="sec-hdr"><div class="sec-title">Status Detail Breakdown</div></div>
+    <div id="log_status_table"></div>
+  </div>
+  <div class="section">
+    <div class="sec-hdr"><div class="sec-title">Monthly Summary</div></div>
+    <div id="log_monthly_table"></div>
+  </div>`;
+}
+
+function initMSLog(){
+  const d   = logGet(logMo, logStatus);
+  const tot = logGet('', '');   // grand total for % calc
+
+  const total     = d.total;
+  const delivered = d.delivered;
+  const pending   = d.pending;
+  const rto       = d.rto;
+  const others    = d.others;
+  const freightT  = d.freight_total;
+  const freightA  = d.freight_avg;
+
+  const pct = (n, base) => base > 0 ? (n/base*100).toFixed(1)+'%' : '0%';
+  const inr = n => '₹' + Math.round(n).toLocaleString('en-IN');
+  const num = n => Math.round(n).toLocaleString('en-IN');
+
+  // ── KPI Cards ──
+  const moLbl = logMo || 'All Months';
+  const sgLbl = logStatus || 'All';
+  const kpiEl = document.getElementById('log_kpis');
+  if(kpiEl) kpiEl.innerHTML = `
+    <div class="kpi" style="--kc:var(--brand)">
+      <div class="kpi-lbl">Total Orders</div>
+      <div class="kpi-val">${num(total)}</div>
+      <div class="kpi-sub">${moLbl} · ${sgLbl}</div>
+    </div>
+    <div class="kpi" style="--kc:var(--ok)">
+      <div class="kpi-lbl">Delivered</div>
+      <div class="kpi-val">${num(delivered)}</div>
+      <div class="kpi-sub">${pct(delivered, total)} of total</div>
+    </div>
+    <div class="kpi" style="--kc:var(--warn)">
+      <div class="kpi-lbl">Pending</div>
+      <div class="kpi-val">${num(pending)}</div>
+      <div class="kpi-sub">${pct(pending, total)} of total</div>
+    </div>
+    <div class="kpi" style="--kc:var(--danger)">
+      <div class="kpi-lbl">RTO</div>
+      <div class="kpi-val">${num(rto)}</div>
+      <div class="kpi-sub">${pct(rto, pending)} of pending</div>
+    </div>
+    <div class="kpi" style="--kc:var(--accent)">
+      <div class="kpi-lbl">Freight Average</div>
+      <div class="kpi-val" style="font-size:20px">${inr(freightA)}</div>
+      <div class="kpi-sub">Total: ${inr(freightT)}</div>
+    </div>
+    <div class="kpi" style="--kc:#a855f7">
+      <div class="kpi-lbl">Others (Pending)</div>
+      <div class="kpi-val">${num(others)}</div>
+      <div class="kpi-sub">${pct(others, pending)} of pending</div>
+    </div>
+  `;
+
+  // ── Status sub ──
+  const ssub = document.getElementById('log_status_sub');
+  if(ssub) ssub.textContent = `${moLbl} · ${sgLbl}`;
+
+  // ── Status Breakdown Donut ──
+  try{
+    donut('log_status_donut',
+      ['Delivered','In Transit','Shipped','Reached Hub','Undelivered','RTO','Others'],
+      [
+        d.status_counts['DELIVERED']||0,
+        (d.status_counts['IN TRANSIT']||0)+(d.status_counts['IN TRANSIT-EN-ROUTE']||0),
+        d.status_counts['SHIPPED']||0,
+        d.status_counts['REACHED DESTINATION HUB']||0,
+        (d.status_counts['UNDELIVERED-1st Attempt']||0)+(d.status_counts['UNDELIVERED-2nd Attempt']||0)+(d.status_counts['UNDELIVERED-3rd Attempt']||0),
+        (d.status_counts['RTO IN TRANSIT']||0),
+        (d.status_counts['CANCELED']||0)+(d.status_counts['FC MANIFEST GENERATED']||0)+(d.status_counts['PICKED UP']||0)+(d.status_counts['PICKUP EXCEPTION']||0)
+      ],
+      ['rgba(34,197,94,.85)','rgba(14,165,233,.85)','rgba(129,140,248,.85)','rgba(250,204,21,.85)','rgba(249,115,22,.85)','rgba(239,68,68,.85)','rgba(148,163,184,.7)']
+    );
+  }catch(e){}
+
+  // ── Order Flow Bar ──
+  try{
+    const months = LOGISTICS.months;
+    bar('log_flow_bar',
+      months,
+      [
+        {label:'Total',     data: months.map(m => logGet(m,'').total),     backgroundColor:'rgba(26,107,74,.6)',  borderRadius:4},
+        {label:'Delivered', data: months.map(m => logGet(m,'').delivered), backgroundColor:'rgba(34,197,94,.85)', borderRadius:4},
+        {label:'Pending',   data: months.map(m => logGet(m,'').pending),   backgroundColor:'rgba(249,115,22,.75)',borderRadius:4},
+      ]
+    );
+  }catch(e){}
+
+  // ── Pending Split Donut ──
+  try{
+    if(pending > 0){
+      donut('log_pending_donut',
+        ['RTO','Others'],
+        [rto, others],
+        ['rgba(239,68,68,.85)','rgba(148,163,184,.75)']
+      );
+    } else {
+      const el = document.getElementById('log_pending_donut');
+      if(el && el.parentElement){
+        el.parentElement.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px">No pending orders</div>`;
+      }
+    }
+  }catch(e){}
+
+  // ── Freight Bar (per month) ──
+  try{
+    const months = LOGISTICS.months;
+    bar('log_freight_bar',
+      months,
+      [{
+        label:'Total Freight',
+        data: months.map(m => logGet(m,'').freight_total),
+        backgroundColor:'rgba(168,85,247,.8)', borderRadius:4
+      },{
+        label:'Avg Freight',
+        data: months.map(m => logGet(m,'').freight_avg),
+        backgroundColor:'rgba(14,165,233,.6)', borderRadius:4
+      }]
+    );
+  }catch(e){}
+
+  // ── Status Detail Table ──
+  const statusTableEl = document.getElementById('log_status_table');
+  if(statusTableEl){
+    const statusGroups = [
+      {label:'✅ Delivered', count: delivered, ofTotal: pct(delivered, total), ofPending: '—', group:'delivered'},
+      {label:'⏳ Pending (All)', count: pending, ofTotal: pct(pending, total), ofPending:'100%', group:'pending'},
+      {label:'  ↳ RTO', count: rto, ofTotal: pct(rto, total), ofPending: pct(rto, pending), group:'rto'},
+      {label:'  ↳ Others', count: others, ofTotal: pct(others, total), ofPending: pct(others, pending), group:'others'},
+    ];
+    // Raw status rows
+    const rawStatuses = Object.entries(d.status_counts).sort((a,b)=>b[1]-a[1]);
+
+    statusTableEl.innerHTML = `
+    <div class="tw"><table>
+      <thead><tr>
+        <th style="text-align:left">Status Group</th>
+        <th>Count</th>
+        <th>% of Total</th>
+        <th>% of Pending</th>
+      </tr></thead>
+      <tbody>
+        ${statusGroups.map(sg=>`<tr>
+          <td style="font-family:'Plus Jakarta Sans',sans-serif">${sg.label}</td>
+          <td>${num(sg.count)}</td>
+          <td>${sg.ofTotal}</td>
+          <td>${sg.ofPending}</td>
+        </tr>`).join('')}
+        <tr><td colspan="4" style="background:var(--surface2);padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase">Raw Status Detail</td></tr>
+        ${rawStatuses.map(([s,c])=>`<tr style="opacity:.85">
+          <td style="padding-left:24px;font-size:11px">${s}</td>
+          <td>${c}</td>
+          <td>${pct(c,total)}</td>
+          <td>${['DELIVERED'].includes(s)?'—':pct(c,pending)}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr>
+        <td>TOTAL</td>
+        <td>${num(total)}</td>
+        <td>100%</td>
+        <td>—</td>
+      </tr></tfoot>
+    </table></div>`;
+  }
+
+  // ── Monthly Summary Table ──
+  const monthlyEl = document.getElementById('log_monthly_table');
+  if(monthlyEl){
+    const months = LOGISTICS.months;
+    const grandTotal = logGet('','').total;
+    monthlyEl.innerHTML = `
+    <div class="tw"><table>
+      <thead><tr>
+        <th style="text-align:left">Month</th>
+        <th>Total Orders</th>
+        <th>Delivered</th>
+        <th>Delivery %</th>
+        <th>Pending</th>
+        <th>RTO</th>
+        <th>Others</th>
+        <th>Freight Total</th>
+        <th>Avg Freight</th>
+      </tr></thead>
+      <tbody>
+        ${months.map(m=>{
+          const md = logGet(m, logStatus);
+          return `<tr>
+            <td>${m}</td>
+            <td>${num(md.total)}</td>
+            <td class="ci">${num(md.delivered)}</td>
+            <td class="ci">${pct(md.delivered, md.total)}</td>
+            <td style="color:var(--warn)">${num(md.pending)}</td>
+            <td style="color:var(--danger)">${num(md.rto)}</td>
+            <td style="color:var(--muted)">${num(md.others)}</td>
+            <td style="color:var(--accent)">${inr(md.freight_total)}</td>
+            <td style="color:var(--accent)">${inr(md.freight_avg)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot><tr>
+        <td>TOTAL</td>
+        <td>${num(logGet('', logStatus).total)}</td>
+        <td class="ci">${num(logGet('', logStatus).delivered)}</td>
+        <td class="ci">${pct(logGet('', logStatus).delivered, logGet('', logStatus).total)}</td>
+        <td style="color:var(--warn)">${num(logGet('', logStatus).pending)}</td>
+        <td style="color:var(--danger)">${num(logGet('', logStatus).rto)}</td>
+        <td style="color:var(--muted)">${num(logGet('', logStatus).others)}</td>
+        <td style="color:var(--accent)">${inr(logGet('', logStatus).freight_total)}</td>
+        <td style="color:var(--accent)">${inr(logGet('', logStatus).freight_avg)}</td>
+      </tfoot>
+    </table></div>`;
+  }
 }
 
 </script>
