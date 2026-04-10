@@ -1219,6 +1219,253 @@ function switchMain(m,el){
   else if(m==='diag'){renderDiagSidebar();renderDiag()}
 }
 
+
+// ══════════════════════════════════════════════════════
+//  LIVE REFRESH FROM GOOGLE SHEETS
+//  Uses column indices (not header names) for reliability
+// ══════════════════════════════════════════════════════
+const LIVE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub";
+const LIVE_URLS = {
+  tp:    LIVE_SHEET_BASE + "?gid=0&single=true&output=csv",
+  gf:    LIVE_SHEET_BASE + "?gid=359260732&single=true&output=csv",
+  ms:    LIVE_SHEET_BASE + "?gid=557531360&single=true&output=csv",
+  mslog: LIVE_SHEET_BASE + "?gid=1931683702&single=true&output=csv",
+  diag:  LIVE_SHEET_BASE + "?gid=78694225&single=true&output=csv",
+};
+
+// ── CSV Parser → returns array of arrays (raw rows) ──
+function liveParseCSVRaw(text) {
+  const lines = text.trim().split('\n');
+  return lines.map(line => {
+    const r = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+      else if (c === ',' && !inQ) { r.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    r.push(cur.trim()); return r;
+  });
+}
+
+function liveIV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
+function liveFV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function liveSV(v) { const s = String(v||'').trim(); return ['None','nan','#N/A','#VALUE!',''].includes(s) ? '' : s; }
+
+// ── AM normalisers ──
+const L_TP_AM = {'aditya':'Aditya Kumar','aditya kumar':'Aditya Kumar','amit kumar rai':'Amit Kumar Rai','amit rai':'Amit Kumar Rai','amit kumar rai':'Amit Kumar Rai','ashish rana':'Ashish Rana','niket':'Niket','niket pathak':'Niket','rafi':'Rafi','rafi khan':'Rafi','shivam ratkal':'Shivam Ratkal'};
+const L_GF_AM = {'akash':'Akash','muzammil':'Muzammil','muzzamil':'Muzammil','muzzamill':'Muzammil','omair':'Omair','shantha':'Shantha'};
+const L_TP_AMS = ['Aditya Kumar','Amit Kumar Rai','Ashish Rana','Niket','Rafi','Shivam Ratkal'];
+const L_GF_AMS = ['Akash','Muzammil','Omair','Shantha'];
+const L_AM_REG_TP = {'Aditya Kumar':'North','Amit Kumar Rai':'North','Ashish Rana':'North','Niket':'West','Rafi':'West','Shivam Ratkal':'South'};
+const L_AM_REG_GF = {'Akash':'North','Muzammil':'South','Omair':'West','Shantha':'South'};
+const L_REGS = ['North','West','South'];
+const L_TP_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
+const L_GF_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan(25)","Feb(25)","Mar(25)","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
+
+const L_MO_IN  = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
+  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
+const L_MO_OUT = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
+  "Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","Apr(26)":"Apr'26","May(26)":"May'26","Jun(26)":"Jun'26","Jul(26)":"Jul'26","Aug(26)":"Aug'26","Sep(26)":"Sep'26","Oct(26)":"Oct'26","Nov(26)":"Nov'26","Dec(26)":"Dec'26",
+  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
+const L_B25 = {'January':'Jan(25)','Feburary':'Feb(25)','March':'Mar(25)'};
+const L_B26 = {'January':"Jan'26",'Feburary':"Feb'26",'March':"Mar'26"};
+function liveGFIn(raw,i){const s=(raw||'').trim();if(L_MO_IN[s])return L_MO_IN[s];if(L_B25[s])return i>=129?L_B26[s]:L_B25[s];return '';}
+function liveGFOut(raw,i){const s=(raw||'').trim();if(L_MO_OUT[s])return L_MO_OUT[s];if(L_B25[s])return i>=129?L_B26[s]:L_B25[s];return '';}
+function liveNAM(n,map){return n?map[n.toLowerCase().trim()]||null:null;}
+
+function liveMkM(months){const o={};months.forEach(m=>o[m]={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0});return o;}
+
+// ── CGM Processor using column indices ──
+// TP Sheet: inward cols: [1]=Mo [3]=Reg [4]=TT [5]=TS [6]=Abb [7]=Lib [8]=AM
+//           outward cols (from row 2): [15]=Abb [16]=Lib [19]=Reg [20]=Mo [23]=TT [24]=TS [26]=AM
+// GF Sheet: inward: same; outward: [15]=LibGiven [16]=Lib2+ [19]=Reg [20]=Mo [22]=OWNER [23]=TT [24]=TS [26]=AM
+function liveProcessCGM(tpRaw, gfRaw) {
+  const tp_tot=liveMkM(L_TP_MONTHS), tp_am={}, tp_reg={};
+  L_TP_AMS.forEach(a=>tp_am[a]=liveMkM(L_TP_MONTHS));
+  L_REGS.forEach(r=>tp_reg[r]=liveMkM(L_TP_MONTHS));
+
+  // TP INWARD — rows[1:] (row 0 = header, row 1 = first data)
+  tpRaw.slice(1).forEach(row => {
+    const m = L_MO_IN[(row[1]||'').trim()] || '';
+    if (!m) return;
+    const am = liveNAM(row[8], L_TP_AM);
+    const reg = (row[3]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const addI = d => { if(!d[m])return; d[m].ai+=liveIV(row[6]); d[m].li+=liveIV(row[7]); d[m].tti+=liveIV(row[4]); d[m].tsi+=liveIV(row[5]); };
+    addI(tp_tot); if(am&&tp_am[am])addI(tp_am[am]); if(L_REGS.includes(regT))addI(tp_reg[regT]);
+  });
+
+  // TP OUTWARD — rows[2:] (row 1 has outward headers as data, skip it)
+  tpRaw.slice(2).forEach(row => {
+    const m = L_MO_OUT[(row[20]||'').trim()] || '';
+    if (!m) return;
+    const am = liveNAM(row[26], L_TP_AM);
+    const reg = (row[19]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const addO = d => { if(!d[m])return; d[m].ao+=liveIV(row[15]); d[m].lo+=liveIV(row[16]); d[m].tto+=liveIV(row[23]); d[m].tso+=liveIV(row[24]); };
+    addO(tp_tot); if(am&&tp_am[am])addO(tp_am[am]); if(L_REGS.includes(regT))addO(tp_reg[regT]);
+  });
+
+  const gf_tot=liveMkM(L_GF_MONTHS), gf_am={}, gf_reg={};
+  L_GF_AMS.forEach(a=>gf_am[a]=liveMkM(L_GF_MONTHS));
+  L_REGS.forEach(r=>gf_reg[r]=liveMkM(L_GF_MONTHS));
+
+  // GF INWARD — rows[1:] (row 0 = header)
+  gfRaw.slice(1).forEach((row,i) => {
+    const m = liveGFIn(row[1], i);
+    if (!m) return;
+    const am = liveNAM(row[8], L_GF_AM);
+    const reg = (row[3]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const addI = d => { if(!d[m])return; d[m].ai+=liveIV(row[6]); d[m].li+=liveIV(row[7]); d[m].tti+=liveIV(row[4]); d[m].tsi+=liveIV(row[5]); };
+    addI(gf_tot); if(am&&gf_am[am])addI(gf_am[am]); if(L_REGS.includes(regT))addI(gf_reg[regT]);
+  });
+
+  // GF OUTWARD — rows[1:] same rows, different cols
+  gfRaw.slice(1).forEach((row,i) => {
+    const m = liveGFOut(row[20], i);
+    if (!m) return;
+    const am = liveNAM(row[26]||row[22], L_GF_AM);
+    const reg = (row[19]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const addO = d => { if(!d[m])return; d[m].ao+=liveIV(row[15]); d[m].lo+=liveIV(row[16]); d[m].tto+=liveIV(row[23]); d[m].tso+=liveIV(row[24]); };
+    addO(gf_tot); if(am&&gf_am[am])addO(gf_am[am]); if(L_REGS.includes(regT))addO(gf_reg[regT]);
+  });
+
+  function ml(d,months){return months.map(m=>({m,...(d[m]||{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0})}))}
+  function tot(d,months){const t={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0};months.forEach(m=>{if(d[m])Object.keys(t).forEach(k=>t[k]+=d[m][k])});return t}
+  function bldOrg(ams,am_d,reg_d,tot_d,months,amReg){
+    const ad={};
+    ams.forEach(am=>{
+      const t=tot(am_d[am],months);
+      ad[am]={monthly:ml(am_d[am],months),regions:{North:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},West:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},South:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0}},ti:t.ai+t.li+t.tti+t.tsi,to:t.ao+t.lo+t.tto+t.tso};
+      const r=amReg[am]||'North'; ad[am].regions[r]=t;
+    });
+    return{monthly:ml(tot_d,months),regions:Object.fromEntries(L_REGS.map(r=>[r,ml(reg_d[r],months)])),ams:ad,totals:tot(tot_d,months),months};
+  }
+  return{tp:bldOrg(L_TP_AMS,tp_am,tp_reg,tp_tot,L_TP_MONTHS,L_AM_REG_TP),gf:bldOrg(L_GF_AMS,gf_am,gf_reg,gf_tot,L_GF_MONTHS,L_AM_REG_GF)};
+}
+
+// ── MySaathi Processor (col indices) ──
+// [0]=OPSPOC [1]=PatID [2]=Name [3]=Mobile [4]=State [5]=PurchDate [6]=PurchMonth
+// [7]=Drug [8]=KitDispatch [9]=QR [10]=InvVerDate [11]=KitDispDate [12]=KitDispMonth
+// [13]=Status [14]=PlanExpiry [15]=Remarks [16]=DietBook [17]=DietComp [18]=PhysBook [19]=PhysComp [20]=IW [21]=CW
+const L_DRUG = {'semaglyn':'Semaglyn','mashema':'Mashema','alterme':'AlterMe','alterm':'AlterMe'};
+function liveProcessMS(msRaw) {
+  return msRaw.slice(1).map(row => {
+    const drug = liveSV(row[7]||'');
+    const dn = L_DRUG[drug.toLowerCase()] || drug;
+    let km = liveSV(row[12]||''); if(km==='0') km='';
+    return {
+      name:liveSV(row[2]||''), state:liveSV(row[4]||''), drug:dn,
+      qr:liveSV(row[9]||'')||'—', status:liveSV(row[13]||''),
+      purchase_month:liveSV(row[6]||''), kit_month:km,
+      is_active:liveSV(row[14]||'')==='Active',
+      diet_book:liveIV(row[16]||0), diet_comp:liveIV(row[17]||0),
+      phys_book:liveIV(row[18]||0), phys_comp:liveIV(row[19]||0),
+      iw:liveFV(row[20]||0), cw:liveFV(row[21]||0)
+    };
+  });
+}
+
+// ── Logistics Processor (col indices) ──
+// [0]=CustName [1]=Product [2]=CreatedAt [3]=Month [4]=AWBDate [5]=FreightAmt
+// [6]=Date [7]=Status [8]=DelivDate [9]=DelivMonth
+function liveProcessLog(logRaw) {
+  const isDel = s => (s||'').toUpperCase()==='DELIVERED';
+  const isRTO = s => (s||'').toUpperCase().includes('RTO');
+  const isPend = s => !isDel(s);
+  const L_MO_ORD = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const rows = logRaw.slice(1);
+  const allMo = [...new Set(rows.map(r=>liveSV(r[3]||'')).filter(Boolean))];
+  const ALL_MO = L_MO_ORD.filter(m=>allMo.includes(m));
+  const ALL_ST = [...new Set(rows.map(r=>liveSV(r[7]||'')).filter(Boolean))].sort();
+  function agg(sub) {
+    const tot=sub.length, del=sub.filter(r=>isDel(liveSV(r[7]||''))).length;
+    const pend=tot-del, rto=sub.filter(r=>isRTO(liveSV(r[7]||''))).length, oth=pend-rto;
+    const fts=sub.map(r=>liveFV(r[5]||0));
+    const ft=Math.round(fts.reduce((s,v)=>s+v,0)*100)/100;
+    const fa=tot>0?Math.round(ft/tot*100)/100:0;
+    const sc={};sub.forEach(r=>{const s=liveSV(r[7]||'');if(s)sc[s]=(sc[s]||0)+1;});
+    const dm={};sub.forEach(r=>{const d=liveSV(r[9]||'');if(d&&d!=='N/A'&&isDel(liveSV(r[7]||'')))dm[d]=(dm[d]||0)+1;});
+    return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,status_counts:sc,deliv_by_month:dm};
+  }
+  const lookup={};
+  ['','Delivered','Pending','RTO','Others'].forEach(sg=>{
+    [''].concat(ALL_MO).forEach(mo=>{
+      const key=`${mo}|${sg}`;
+      let f=rows.filter(r=>!mo||liveSV(r[3]||'')=== mo);
+      if(sg==='Delivered')f=f.filter(r=>isDel(liveSV(r[7]||'')));
+      else if(sg==='Pending')f=f.filter(r=>isPend(liveSV(r[7]||'')));
+      else if(sg==='RTO')f=f.filter(r=>isRTO(liveSV(r[7]||'')));
+      else if(sg==='Others')f=f.filter(r=>isPend(liveSV(r[7]||''))&&!isRTO(liveSV(r[7]||'')));
+      lookup[key]=agg(f);
+    });
+  });
+  return{lookup,months:ALL_MO,statuses:ALL_ST,monthly_trend:{}};
+}
+
+// ── Diagnostics Processor (col indices) ──
+// [23]=Team [24]=Type [17]=Invoice [32]=NetRev [20]=Discount [14]=TestType [16]=Partner [35]=Month
+const L_DIAG_MO=["Jan'25","Feb'25","Mar'25","Apr'25","May'25","Jun'25","Jul'25","Aug'25","Sep'25","Oct'25","Nov'25","Dec'25","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
+function liveProcessDiag(diagRaw) {
+  const raw = diagRaw.slice(1).map(r=>({
+    mo:liveSV(r[35]||''), team:liveSV(r[23]||''), type:liveSV(r[24]||''),
+    inv:liveFV(r[17]||0), rev:liveFV(r[32]||0), disc:liveFV(r[20]||0),
+    tt:liveSV(r[14]||''), partner:liveSV(r[16]||'')
+  }));
+  const ALL_MO=L_DIAG_MO.filter(m=>raw.some(r=>r.mo===m));
+  const ALL_T=[...new Set(raw.map(r=>r.team).filter(Boolean))].sort();
+  const ALL_TY=['B2B','B2C'];
+  const ALL_TT=[...new Set(raw.map(r=>r.tt).filter(Boolean))].sort();
+  const ALL_P=[...new Set(raw.map(r=>r.partner).filter(Boolean))].sort();
+  function agg(sub){
+    const v=sub.filter(r=>r.inv!==0);
+    const tt={};ALL_TT.forEach(t=>tt[t]={orders:0,rev:0});
+    const pt={};
+    v.forEach(r=>{if(r.tt){tt[r.tt].orders++;tt[r.tt].rev+=r.rev;}if(r.partner){if(!pt[r.partner])pt[r.partner]={orders:0,rev:0};pt[r.partner].orders++;pt[r.partner].rev+=r.rev;}});
+    Object.keys(tt).forEach(k=>tt[k].rev=Math.round(tt[k].rev));
+    Object.keys(pt).forEach(k=>pt[k].rev=Math.round(pt[k].rev));
+    return{orders:v.length,rev:Math.round(v.reduce((s,r)=>s+r.rev,0)),disc:Math.round(v.reduce((s,r)=>s+r.disc,0)),tt,partner:pt};
+  }
+  const lookup={};
+  [''].concat(ALL_MO).forEach(mo=>{[''].concat(ALL_T).forEach(team=>{[''].concat(ALL_TY).forEach(typ=>{
+    const key=`${mo}|${team}|${typ}`;
+    const f=raw.filter(r=>(!mo||r.mo===mo)&&(!team||r.team===team)&&(!typ||r.type===typ));
+    lookup[key]=agg(f);
+  });});});
+  return{lookup,months:ALL_MO,teams:ALL_T,types:ALL_TY,testTypes:ALL_TT,partners:ALL_P};
+}
+
+// ── Main Refresh Function ──
+async function refreshFromSheets() {
+  const btn = document.getElementById('refresh_btn');
+  const badge = document.getElementById('data_badge');
+  if(btn){btn.textContent='⏳ LOADING...';btn.disabled=true;btn.style.color='';}
+  try {
+    const [tpR,gfR,msR,logR,diagR] = await Promise.all([
+      fetch(LIVE_URLS.tp).then(r=>{if(!r.ok)throw new Error('TP fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.gf).then(r=>{if(!r.ok)throw new Error('GF fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.ms).then(r=>{if(!r.ok)throw new Error('MS fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.mslog).then(r=>{if(!r.ok)throw new Error('Log fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.diag).then(r=>{if(!r.ok)throw new Error('Diag fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
+    ]);
+    const cgm = liveProcessCGM(tpR, gfR);
+    D         = { tp: cgm.tp, gf: cgm.gf };
+    MS_RAW    = liveProcessMS(msR);
+    LOGISTICS = liveProcessLog(logR);
+    DIAG      = liveProcessDiag(diagR);
+    if(badge){badge.textContent='● LIVE DATA';badge.style.color='#86efac';}
+    if(btn){btn.textContent='✅ UPDATED';setTimeout(()=>{btn.textContent='🔄 REFRESH';btn.disabled=false;},2000);}
+    if(currentMain==='cgm')renderCGMContent();
+    else if(currentMain==='pe')renderPEC();
+    else if(currentMain==='ms')renderMSContent();
+    else if(currentMain==='diag')renderDiagContent();
+  } catch(e) {
+    console.error('Refresh error:', e);
+    if(btn){btn.textContent='❌ FAILED ('+e.message.substring(0,30)+')';btn.style.color='#fca5a5';setTimeout(()=>{btn.textContent='🔄 REFRESH';btn.disabled=false;btn.style.color='';},4000);}
+  }
+}
+
+
+
 // ── INIT ──
 // Auto-fetch from Google Sheets on every page load
 // Falls back to embedded data if fetch fails
@@ -2016,251 +2263,6 @@ function initMSLog(){
         <td style="color:var(--accent)">${inr(logGet('', logStatus).freight_avg)}</td>
       </tfoot>
     </table></div>`;
-  }
-}
-
-
-// ══════════════════════════════════════════════════════
-//  LIVE REFRESH FROM GOOGLE SHEETS
-//  Uses column indices (not header names) for reliability
-// ══════════════════════════════════════════════════════
-const LIVE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub";
-const LIVE_URLS = {
-  tp:    LIVE_SHEET_BASE + "?gid=0&single=true&output=csv",
-  gf:    LIVE_SHEET_BASE + "?gid=359260732&single=true&output=csv",
-  ms:    LIVE_SHEET_BASE + "?gid=557531360&single=true&output=csv",
-  mslog: LIVE_SHEET_BASE + "?gid=1931683702&single=true&output=csv",
-  diag:  LIVE_SHEET_BASE + "?gid=78694225&single=true&output=csv",
-};
-
-// ── CSV Parser → returns array of arrays (raw rows) ──
-function liveParseCSVRaw(text) {
-  const lines = text.trim().split('\n');
-  return lines.map(line => {
-    const r = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
-      else if (c === ',' && !inQ) { r.push(cur.trim()); cur = ''; }
-      else cur += c;
-    }
-    r.push(cur.trim()); return r;
-  });
-}
-
-function liveIV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
-function liveFV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
-function liveSV(v) { const s = String(v||'').trim(); return ['None','nan','#N/A','#VALUE!',''].includes(s) ? '' : s; }
-
-// ── AM normalisers ──
-const L_TP_AM = {'aditya':'Aditya Kumar','aditya kumar':'Aditya Kumar','amit kumar rai':'Amit Kumar Rai','amit rai':'Amit Kumar Rai','amit kumar rai':'Amit Kumar Rai','ashish rana':'Ashish Rana','niket':'Niket','niket pathak':'Niket','rafi':'Rafi','rafi khan':'Rafi','shivam ratkal':'Shivam Ratkal'};
-const L_GF_AM = {'akash':'Akash','muzammil':'Muzammil','muzzamil':'Muzammil','muzzamill':'Muzammil','omair':'Omair','shantha':'Shantha'};
-const L_TP_AMS = ['Aditya Kumar','Amit Kumar Rai','Ashish Rana','Niket','Rafi','Shivam Ratkal'];
-const L_GF_AMS = ['Akash','Muzammil','Omair','Shantha'];
-const L_AM_REG_TP = {'Aditya Kumar':'North','Amit Kumar Rai':'North','Ashish Rana':'North','Niket':'West','Rafi':'West','Shivam Ratkal':'South'};
-const L_AM_REG_GF = {'Akash':'North','Muzammil':'South','Omair':'West','Shantha':'South'};
-const L_REGS = ['North','West','South'];
-const L_TP_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
-const L_GF_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan(25)","Feb(25)","Mar(25)","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
-
-const L_MO_IN  = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
-  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
-const L_MO_OUT = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
-  "Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","Apr(26)":"Apr'26","May(26)":"May'26","Jun(26)":"Jun'26","Jul(26)":"Jul'26","Aug(26)":"Aug'26","Sep(26)":"Sep'26","Oct(26)":"Oct'26","Nov(26)":"Nov'26","Dec(26)":"Dec'26",
-  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
-const L_B25 = {'January':'Jan(25)','Feburary':'Feb(25)','March':'Mar(25)'};
-const L_B26 = {'January':"Jan'26",'Feburary':"Feb'26",'March':"Mar'26"};
-function liveGFIn(raw,i){const s=(raw||'').trim();if(L_MO_IN[s])return L_MO_IN[s];if(L_B25[s])return i>=129?L_B26[s]:L_B25[s];return '';}
-function liveGFOut(raw,i){const s=(raw||'').trim();if(L_MO_OUT[s])return L_MO_OUT[s];if(L_B25[s])return i>=129?L_B26[s]:L_B25[s];return '';}
-function liveNAM(n,map){return n?map[n.toLowerCase().trim()]||null:null;}
-
-function liveMkM(months){const o={};months.forEach(m=>o[m]={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0});return o;}
-
-// ── CGM Processor using column indices ──
-// TP Sheet: inward cols: [1]=Mo [3]=Reg [4]=TT [5]=TS [6]=Abb [7]=Lib [8]=AM
-//           outward cols (from row 2): [15]=Abb [16]=Lib [19]=Reg [20]=Mo [23]=TT [24]=TS [26]=AM
-// GF Sheet: inward: same; outward: [15]=LibGiven [16]=Lib2+ [19]=Reg [20]=Mo [22]=OWNER [23]=TT [24]=TS [26]=AM
-function liveProcessCGM(tpRaw, gfRaw) {
-  const tp_tot=liveMkM(L_TP_MONTHS), tp_am={}, tp_reg={};
-  L_TP_AMS.forEach(a=>tp_am[a]=liveMkM(L_TP_MONTHS));
-  L_REGS.forEach(r=>tp_reg[r]=liveMkM(L_TP_MONTHS));
-
-  // TP INWARD — rows[1:] (row 0 = header, row 1 = first data)
-  tpRaw.slice(1).forEach(row => {
-    const m = L_MO_IN[(row[1]||'').trim()] || '';
-    if (!m) return;
-    const am = liveNAM(row[8], L_TP_AM);
-    const reg = (row[3]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
-    const addI = d => { if(!d[m])return; d[m].ai+=liveIV(row[6]); d[m].li+=liveIV(row[7]); d[m].tti+=liveIV(row[4]); d[m].tsi+=liveIV(row[5]); };
-    addI(tp_tot); if(am&&tp_am[am])addI(tp_am[am]); if(L_REGS.includes(regT))addI(tp_reg[regT]);
-  });
-
-  // TP OUTWARD — rows[2:] (row 1 has outward headers as data, skip it)
-  tpRaw.slice(2).forEach(row => {
-    const m = L_MO_OUT[(row[20]||'').trim()] || '';
-    if (!m) return;
-    const am = liveNAM(row[26], L_TP_AM);
-    const reg = (row[19]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
-    const addO = d => { if(!d[m])return; d[m].ao+=liveIV(row[15]); d[m].lo+=liveIV(row[16]); d[m].tto+=liveIV(row[23]); d[m].tso+=liveIV(row[24]); };
-    addO(tp_tot); if(am&&tp_am[am])addO(tp_am[am]); if(L_REGS.includes(regT))addO(tp_reg[regT]);
-  });
-
-  const gf_tot=liveMkM(L_GF_MONTHS), gf_am={}, gf_reg={};
-  L_GF_AMS.forEach(a=>gf_am[a]=liveMkM(L_GF_MONTHS));
-  L_REGS.forEach(r=>gf_reg[r]=liveMkM(L_GF_MONTHS));
-
-  // GF INWARD — rows[1:] (row 0 = header)
-  gfRaw.slice(1).forEach((row,i) => {
-    const m = liveGFIn(row[1], i);
-    if (!m) return;
-    const am = liveNAM(row[8], L_GF_AM);
-    const reg = (row[3]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
-    const addI = d => { if(!d[m])return; d[m].ai+=liveIV(row[6]); d[m].li+=liveIV(row[7]); d[m].tti+=liveIV(row[4]); d[m].tsi+=liveIV(row[5]); };
-    addI(gf_tot); if(am&&gf_am[am])addI(gf_am[am]); if(L_REGS.includes(regT))addI(gf_reg[regT]);
-  });
-
-  // GF OUTWARD — rows[1:] same rows, different cols
-  gfRaw.slice(1).forEach((row,i) => {
-    const m = liveGFOut(row[20], i);
-    if (!m) return;
-    const am = liveNAM(row[26]||row[22], L_GF_AM);
-    const reg = (row[19]||'').trim(); const regT = reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
-    const addO = d => { if(!d[m])return; d[m].ao+=liveIV(row[15]); d[m].lo+=liveIV(row[16]); d[m].tto+=liveIV(row[23]); d[m].tso+=liveIV(row[24]); };
-    addO(gf_tot); if(am&&gf_am[am])addO(gf_am[am]); if(L_REGS.includes(regT))addO(gf_reg[regT]);
-  });
-
-  function ml(d,months){return months.map(m=>({m,...(d[m]||{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0})}))}
-  function tot(d,months){const t={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0};months.forEach(m=>{if(d[m])Object.keys(t).forEach(k=>t[k]+=d[m][k])});return t}
-  function bldOrg(ams,am_d,reg_d,tot_d,months,amReg){
-    const ad={};
-    ams.forEach(am=>{
-      const t=tot(am_d[am],months);
-      ad[am]={monthly:ml(am_d[am],months),regions:{North:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},West:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},South:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0}},ti:t.ai+t.li+t.tti+t.tsi,to:t.ao+t.lo+t.tto+t.tso};
-      const r=amReg[am]||'North'; ad[am].regions[r]=t;
-    });
-    return{monthly:ml(tot_d,months),regions:Object.fromEntries(L_REGS.map(r=>[r,ml(reg_d[r],months)])),ams:ad,totals:tot(tot_d,months),months};
-  }
-  return{tp:bldOrg(L_TP_AMS,tp_am,tp_reg,tp_tot,L_TP_MONTHS,L_AM_REG_TP),gf:bldOrg(L_GF_AMS,gf_am,gf_reg,gf_tot,L_GF_MONTHS,L_AM_REG_GF)};
-}
-
-// ── MySaathi Processor (col indices) ──
-// [0]=OPSPOC [1]=PatID [2]=Name [3]=Mobile [4]=State [5]=PurchDate [6]=PurchMonth
-// [7]=Drug [8]=KitDispatch [9]=QR [10]=InvVerDate [11]=KitDispDate [12]=KitDispMonth
-// [13]=Status [14]=PlanExpiry [15]=Remarks [16]=DietBook [17]=DietComp [18]=PhysBook [19]=PhysComp [20]=IW [21]=CW
-const L_DRUG = {'semaglyn':'Semaglyn','mashema':'Mashema','alterme':'AlterMe','alterm':'AlterMe'};
-function liveProcessMS(msRaw) {
-  return msRaw.slice(1).map(row => {
-    const drug = liveSV(row[7]||'');
-    const dn = L_DRUG[drug.toLowerCase()] || drug;
-    let km = liveSV(row[12]||''); if(km==='0') km='';
-    return {
-      name:liveSV(row[2]||''), state:liveSV(row[4]||''), drug:dn,
-      qr:liveSV(row[9]||'')||'—', status:liveSV(row[13]||''),
-      purchase_month:liveSV(row[6]||''), kit_month:km,
-      is_active:liveSV(row[14]||'')==='Active',
-      diet_book:liveIV(row[16]||0), diet_comp:liveIV(row[17]||0),
-      phys_book:liveIV(row[18]||0), phys_comp:liveIV(row[19]||0),
-      iw:liveFV(row[20]||0), cw:liveFV(row[21]||0)
-    };
-  });
-}
-
-// ── Logistics Processor (col indices) ──
-// [0]=CustName [1]=Product [2]=CreatedAt [3]=Month [4]=AWBDate [5]=FreightAmt
-// [6]=Date [7]=Status [8]=DelivDate [9]=DelivMonth
-function liveProcessLog(logRaw) {
-  const isDel = s => (s||'').toUpperCase()==='DELIVERED';
-  const isRTO = s => (s||'').toUpperCase().includes('RTO');
-  const isPend = s => !isDel(s);
-  const L_MO_ORD = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const rows = logRaw.slice(1);
-  const allMo = [...new Set(rows.map(r=>liveSV(r[3]||'')).filter(Boolean))];
-  const ALL_MO = L_MO_ORD.filter(m=>allMo.includes(m));
-  const ALL_ST = [...new Set(rows.map(r=>liveSV(r[7]||'')).filter(Boolean))].sort();
-  function agg(sub) {
-    const tot=sub.length, del=sub.filter(r=>isDel(liveSV(r[7]||''))).length;
-    const pend=tot-del, rto=sub.filter(r=>isRTO(liveSV(r[7]||''))).length, oth=pend-rto;
-    const fts=sub.map(r=>liveFV(r[5]||0));
-    const ft=Math.round(fts.reduce((s,v)=>s+v,0)*100)/100;
-    const fa=tot>0?Math.round(ft/tot*100)/100:0;
-    const sc={};sub.forEach(r=>{const s=liveSV(r[7]||'');if(s)sc[s]=(sc[s]||0)+1;});
-    const dm={};sub.forEach(r=>{const d=liveSV(r[9]||'');if(d&&d!=='N/A'&&isDel(liveSV(r[7]||'')))dm[d]=(dm[d]||0)+1;});
-    return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,status_counts:sc,deliv_by_month:dm};
-  }
-  const lookup={};
-  ['','Delivered','Pending','RTO','Others'].forEach(sg=>{
-    [''].concat(ALL_MO).forEach(mo=>{
-      const key=`${mo}|${sg}`;
-      let f=rows.filter(r=>!mo||liveSV(r[3]||'')=== mo);
-      if(sg==='Delivered')f=f.filter(r=>isDel(liveSV(r[7]||'')));
-      else if(sg==='Pending')f=f.filter(r=>isPend(liveSV(r[7]||'')));
-      else if(sg==='RTO')f=f.filter(r=>isRTO(liveSV(r[7]||'')));
-      else if(sg==='Others')f=f.filter(r=>isPend(liveSV(r[7]||''))&&!isRTO(liveSV(r[7]||'')));
-      lookup[key]=agg(f);
-    });
-  });
-  return{lookup,months:ALL_MO,statuses:ALL_ST,monthly_trend:{}};
-}
-
-// ── Diagnostics Processor (col indices) ──
-// [23]=Team [24]=Type [17]=Invoice [32]=NetRev [20]=Discount [14]=TestType [16]=Partner [35]=Month
-const L_DIAG_MO=["Jan'25","Feb'25","Mar'25","Apr'25","May'25","Jun'25","Jul'25","Aug'25","Sep'25","Oct'25","Nov'25","Dec'25","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
-function liveProcessDiag(diagRaw) {
-  const raw = diagRaw.slice(1).map(r=>({
-    mo:liveSV(r[35]||''), team:liveSV(r[23]||''), type:liveSV(r[24]||''),
-    inv:liveFV(r[17]||0), rev:liveFV(r[32]||0), disc:liveFV(r[20]||0),
-    tt:liveSV(r[14]||''), partner:liveSV(r[16]||'')
-  }));
-  const ALL_MO=L_DIAG_MO.filter(m=>raw.some(r=>r.mo===m));
-  const ALL_T=[...new Set(raw.map(r=>r.team).filter(Boolean))].sort();
-  const ALL_TY=['B2B','B2C'];
-  const ALL_TT=[...new Set(raw.map(r=>r.tt).filter(Boolean))].sort();
-  const ALL_P=[...new Set(raw.map(r=>r.partner).filter(Boolean))].sort();
-  function agg(sub){
-    const v=sub.filter(r=>r.inv!==0);
-    const tt={};ALL_TT.forEach(t=>tt[t]={orders:0,rev:0});
-    const pt={};
-    v.forEach(r=>{if(r.tt){tt[r.tt].orders++;tt[r.tt].rev+=r.rev;}if(r.partner){if(!pt[r.partner])pt[r.partner]={orders:0,rev:0};pt[r.partner].orders++;pt[r.partner].rev+=r.rev;}});
-    Object.keys(tt).forEach(k=>tt[k].rev=Math.round(tt[k].rev));
-    Object.keys(pt).forEach(k=>pt[k].rev=Math.round(pt[k].rev));
-    return{orders:v.length,rev:Math.round(v.reduce((s,r)=>s+r.rev,0)),disc:Math.round(v.reduce((s,r)=>s+r.disc,0)),tt,partner:pt};
-  }
-  const lookup={};
-  [''].concat(ALL_MO).forEach(mo=>{[''].concat(ALL_T).forEach(team=>{[''].concat(ALL_TY).forEach(typ=>{
-    const key=`${mo}|${team}|${typ}`;
-    const f=raw.filter(r=>(!mo||r.mo===mo)&&(!team||r.team===team)&&(!typ||r.type===typ));
-    lookup[key]=agg(f);
-  });});});
-  return{lookup,months:ALL_MO,teams:ALL_T,types:ALL_TY,testTypes:ALL_TT,partners:ALL_P};
-}
-
-// ── Main Refresh Function ──
-async function refreshFromSheets() {
-  const btn = document.getElementById('refresh_btn');
-  const badge = document.getElementById('data_badge');
-  if(btn){btn.textContent='⏳ LOADING...';btn.disabled=true;btn.style.color='';}
-  try {
-    const [tpR,gfR,msR,logR,diagR] = await Promise.all([
-      fetch(LIVE_URLS.tp).then(r=>{if(!r.ok)throw new Error('TP fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
-      fetch(LIVE_URLS.gf).then(r=>{if(!r.ok)throw new Error('GF fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
-      fetch(LIVE_URLS.ms).then(r=>{if(!r.ok)throw new Error('MS fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
-      fetch(LIVE_URLS.mslog).then(r=>{if(!r.ok)throw new Error('Log fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
-      fetch(LIVE_URLS.diag).then(r=>{if(!r.ok)throw new Error('Diag fetch failed: '+r.status);return r.text();}).then(liveParseCSVRaw),
-    ]);
-    const cgm = liveProcessCGM(tpR, gfR);
-    D         = { tp: cgm.tp, gf: cgm.gf };
-    MS_RAW    = liveProcessMS(msR);
-    LOGISTICS = liveProcessLog(logR);
-    DIAG      = liveProcessDiag(diagR);
-    if(badge){badge.textContent='● LIVE DATA';badge.style.color='#86efac';}
-    if(btn){btn.textContent='✅ UPDATED';setTimeout(()=>{btn.textContent='🔄 REFRESH';btn.disabled=false;},2000);}
-    if(currentMain==='cgm')renderCGMContent();
-    else if(currentMain==='pe')renderPEC();
-    else if(currentMain==='ms')renderMSContent();
-    else if(currentMain==='diag')renderDiagContent();
-  } catch(e) {
-    console.error('Refresh error:', e);
-    if(btn){btn.textContent='❌ FAILED ('+e.message.substring(0,30)+')';btn.style.color='#fca5a5';setTimeout(()=>{btn.textContent='🔄 REFRESH';btn.disabled=false;btn.style.color='';},4000);}
   }
 }
 
