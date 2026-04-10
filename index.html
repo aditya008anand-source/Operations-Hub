@@ -2021,17 +2021,20 @@ function liveSV(v) { const s = String(v||'').trim(); return ['None','nan','#N/A'
 
 // ── AM normalisers ──
 const L_TP_AM = {'aditya':'Aditya Kumar','aditya kumar':'Aditya Kumar','amit kumar rai':'Amit Kumar Rai','amit rai':'Amit Kumar Rai','amit kumar rai':'Amit Kumar Rai','ashish rana':'Ashish Rana','niket':'Niket','niket pathak':'Niket','rafi':'Rafi','rafi khan':'Rafi','shivam ratkal':'Shivam Ratkal'};
-const L_GF_AM = {'akash':'Akash','muzammil':'Muzammil','muzzamil':'Muzammil','omair':'Omair','shantha':'Shantha'};
+const L_GF_AM = {'akash':'Akash','muzammil':'Muzammil','muzzamil':'Muzammil','muzzamill':'Muzammil','omair':'Omair','shantha':'Shantha'};
 const L_TP_AMS = ['Aditya Kumar','Amit Kumar Rai','Ashish Rana','Niket','Rafi','Shivam Ratkal'];
 const L_GF_AMS = ['Akash','Muzammil','Omair','Shantha'];
 const L_AM_REG_TP = {'Aditya Kumar':'North','Amit Kumar Rai':'North','Ashish Rana':'North','Niket':'West','Rafi':'West','Shivam Ratkal':'South'};
 const L_AM_REG_GF = {'Akash':'North','Muzammil':'South','Omair':'West','Shantha':'South'};
 const L_REGS = ['North','West','South'];
-const L_TP_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb'26","Mar'26"];
-const L_GF_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan(25)","Feb(25)","Mar(25)","Jan'26","Feb'26","Mar'26"];
+const L_TP_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
+const L_GF_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan(25)","Feb(25)","Mar(25)","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
 
-const L_MO_IN  = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
-const L_MO_OUT = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
+const L_MO_IN  = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
+  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
+const L_MO_OUT = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',
+  "Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","Apr(26)":"Apr'26","May(26)":"May'26","Jun(26)":"Jun'26","Jul(26)":"Jul'26","Aug(26)":"Aug'26","Sep(26)":"Sep'26","Oct(26)":"Oct'26","Nov(26)":"Nov'26","Dec(26)":"Dec'26",
+  "January(26)":"Jan'26","Feburary(26)":"Feb'26","February(26)":"Feb'26","March(26)":"Mar'26","April(26)":"Apr'26","May(26)":"May'26","June(26)":"Jun'26","July(26)":"Jul'26","August(26)":"Aug'26","September(26)":"Sep'26","October(26)":"Oct'26","November(26)":"Nov'26","December(26)":"Dec'26"};
 const L_B25 = {'January':'Jan(25)','Feburary':'Feb(25)','March':'Mar(25)'};
 const L_B26 = {'January':"Jan'26",'Feburary':"Feb'26",'March':"Mar'26"};
 function liveGFIn(raw,i){const s=(raw||'').trim();if(L_MO_IN[s])return L_MO_IN[s];if(L_B25[s])return i>=129?L_B26[s]:L_B25[s];return '';}
@@ -2168,7 +2171,7 @@ function liveProcessLog(logRaw) {
 
 // ── Diagnostics Processor (col indices) ──
 // [23]=Team [24]=Type [17]=Invoice [32]=NetRev [20]=Discount [14]=TestType [16]=Partner [35]=Month
-const L_DIAG_MO=["Jan'25","Feb'25","Mar'25","Apr'25","May'25","Jun'25","Jul'25","Aug'25","Sep'25","Oct'25","Nov'25","Dec'25","Jan'26"];
+const L_DIAG_MO=["Jan'25","Feb'25","Mar'25","Apr'25","May'25","Jun'25","Jul'25","Aug'25","Sep'25","Oct'25","Nov'25","Dec'25","Jan'26","Feb'26","Mar'26","Apr'26","May'26","Jun'26","Jul'26","Aug'26","Sep'26","Oct'26","Nov'26","Dec'26"];
 function liveProcessDiag(diagRaw) {
   const raw = diagRaw.slice(1).map(r=>({
     mo:liveSV(r[35]||''), team:liveSV(r[23]||''), type:liveSV(r[24]||''),
