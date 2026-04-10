@@ -1220,8 +1220,41 @@ function switchMain(m,el){
 }
 
 // ── INIT ──
-renderCGMSidebar();
-renderCGMContent();
+// Auto-fetch from Google Sheets on every page load
+// Falls back to embedded data if fetch fails
+(async function autoInit() {
+  // Show a small loading indicator in the topbar badge
+  const badge = document.getElementById('data_badge');
+  const btn   = document.getElementById('refresh_btn');
+  if(badge) badge.textContent = '⏳ LOADING...';
+  if(btn)  { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const [tpR,gfR,msR,logR,diagR] = await Promise.all([
+      fetch(LIVE_URLS.tp).then(r=>{if(!r.ok)throw new Error('TP '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.gf).then(r=>{if(!r.ok)throw new Error('GF '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.ms).then(r=>{if(!r.ok)throw new Error('MS '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.mslog).then(r=>{if(!r.ok)throw new Error('Log '+r.status);return r.text();}).then(liveParseCSVRaw),
+      fetch(LIVE_URLS.diag).then(r=>{if(!r.ok)throw new Error('Diag '+r.status);return r.text();}).then(liveParseCSVRaw),
+    ]);
+    const cgm = liveProcessCGM(tpR, gfR);
+    D         = { tp: cgm.tp, gf: cgm.gf };
+    MS_RAW    = liveProcessMS(msR);
+    LOGISTICS = liveProcessLog(logR);
+    DIAG      = liveProcessDiag(diagR);
+    if(badge) { badge.textContent = '● LIVE DATA'; badge.style.color = '#86efac'; }
+    if(btn)   { btn.textContent = '🔄 REFRESH'; btn.disabled = false; }
+  } catch(e) {
+    // Fetch failed — use embedded data silently
+    console.warn('Auto-fetch failed, using embedded data:', e.message);
+    if(badge) { badge.textContent = '● EMBEDDED DATA'; badge.style.color = ''; }
+    if(btn)   { btn.textContent = '🔄 REFRESH'; btn.disabled = false; }
+  }
+
+  // Render dashboard (with whatever data is now in D, MS_RAW, etc.)
+  renderCGMSidebar();
+  renderCGMContent();
+})();
 
 
 // ══════════════════════════════════════════════════════
