@@ -1629,29 +1629,38 @@ function liveProcessPE(peRaw, scRaw) {
     mgmtMonthly[m] = t;
   });
 
-  const newPED = {
+  // Pre-compute combined overall to avoid self-reference in const declaration
+  const pedOverall = {
+    total:    fieldData.overall.total    + isData.overall.total,
+    renewals: (fieldData.overall.renewals||0) + (isData.overall.renewals||0),
+    new:      (fieldData.overall.new||0)      + (isData.overall.new||0),
+    wcb:      fieldData.overall.wcb      + isData.overall.wcb,
+    wcc:      fieldData.overall.wcc      + isData.overall.wcc,
+    dx_plan:  (fieldData.overall.dx_plan||0)  + (isData.overall.dx_plan||0),
+    dx_booked:(fieldData.overall.dx_booked||0)+ (isData.overall.dx_booked||0),
+    dr_plan:  fieldData.overall.dr_plan  + isData.overall.dr_plan,
+    dr_comp:  fieldData.overall.dr_comp  + isData.overall.dr_comp,
+    nutri:    fieldData.overall.nutri    + isData.overall.nutri,
+    physio:   fieldData.overall.physio   + isData.overall.physio,
+    phyco:    fieldData.overall.phyco    + isData.overall.phyco,
+    all3:     fieldData.overall.all3     + isData.overall.all3,
+    any1:     fieldData.overall.any1     + isData.overall.any1,
+    wcb_p:    0, wcc_p: 0, dr_pct: 0
+  };
+  pedOverall.wcb_p  = pedOverall.total > 0 ? parseFloat((pedOverall.wcb/pedOverall.total*100).toFixed(1)) : 0;
+  pedOverall.wcc_p  = pedOverall.total > 0 ? parseFloat((pedOverall.wcc/pedOverall.total*100).toFixed(1)) : 0;
+  pedOverall.dr_pct = pedOverall.dr_plan > 0 ? parseFloat((pedOverall.dr_comp/pedOverall.dr_plan*100).toFixed(1)) : 0;
+
+    const newPED = {
     months: peMos,
     conditions: fieldData.conditions,
     plan_durations: fieldData.plan_durations,
-    overall: {
-      total: (fieldData.overall.total + isData.overall.total),
-      wcb: (fieldData.overall.wcb + isData.overall.wcb),
-      wcc: (fieldData.overall.wcc + isData.overall.wcc),
-      dr_plan: (fieldData.overall.dr_plan + isData.overall.dr_plan),
-      dr_comp: (fieldData.overall.dr_comp + isData.overall.dr_comp),
-      nutri: (fieldData.overall.nutri + isData.overall.nutri),
-      physio: (fieldData.overall.physio + isData.overall.physio),
-      phyco: (fieldData.overall.phyco + isData.overall.phyco),
-      all3: (fieldData.overall.all3 + isData.overall.all3),
-      any1: (fieldData.overall.any1 + isData.overall.any1),
-    },
+    overall: pedOverall,
     'Field':         fieldData,
     'Inside Sales':  isData,
-    'Management':    { overall: newPED.overall, monthly: mgmtMonthly, conditions: fieldData.conditions||{}, plan_durations: fieldData.plan_durations||{} },
+    'Management':    { overall: pedOverall, monthly: mgmtMonthly, conditions: fieldData.conditions||{}, plan_durations: fieldData.plan_durations||{} },
   };
-  newPED.overall.wcb_p  = newPED.overall.total > 0 ? parseFloat((newPED.overall.wcb/newPED.overall.total*100).toFixed(1)) : 0;
-  newPED.overall.wcc_p  = newPED.overall.total > 0 ? parseFloat((newPED.overall.wcc/newPED.overall.total*100).toFixed(1)) : 0;
-  newPED.overall.dr_pct = newPED.overall.dr_plan > 0 ? parseFloat((newPED.overall.dr_comp/newPED.overall.dr_plan*100).toFixed(1)) : 0;
+  // (overall percentages pre-computed in pedOverall)
 
   // SC shape: matches what peActiveData('sc') expects
   const newSC = {
