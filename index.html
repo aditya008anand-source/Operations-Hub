@@ -163,7 +163,18 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
   <button class="main-tab" onclick="switchMain('ms',this)">💊 Mysaathi</button>
   <button class="main-tab" onclick="switchMain('diag',this)">🔬 Diagnostics</button>
   <button class="main-tab" onclick="switchMain('skill',this)">🎯 About</button>
-  <div class="topbar-right"><span class="badge-live">● LIVE DATA</span></div>
+  <div class="topbar-right">
+    <button id="refresh_btn" onclick="refreshFromSheets()" style="
+      font-size:11px;font-weight:700;padding:6px 14px;border-radius:999px;
+      background:rgba(134,239,172,.15);color:#86efac;border:1px solid rgba(134,239,172,.3);
+      cursor:pointer;font-family:'JetBrains Mono',monospace;letter-spacing:1px;
+      transition:all .2s;margin-right:8px;
+    " onmouseover="this.style.background='rgba(134,239,172,.3)'" 
+       onmouseout="this.style.background='rgba(134,239,172,.15)'">
+      🔄 REFRESH
+    </button>
+    <span class="badge-live" id="data_badge">● EMBEDDED DATA</span>
+  </div>
 </div>
 <div id="app">
   <div id="sidebar"></div>
@@ -1972,6 +1983,228 @@ function initMSLog(){
         <td style="color:var(--accent)">${inr(logGet('', logStatus).freight_avg)}</td>
       </tfoot>
     </table></div>`;
+  }
+}
+
+
+// ══════════════════════════════════════════════════════
+//  LIVE REFRESH FROM GOOGLE SHEETS (optional)
+//  Works only when hosted on a server (Vercel/web)
+//  Local file:// usage loads from embedded data above
+// ══════════════════════════════════════════════════════
+const LIVE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub";
+const LIVE_URLS = {
+  tp:    LIVE_SHEET_BASE + "?gid=0&single=true&output=csv",
+  gf:    LIVE_SHEET_BASE + "?gid=359260732&single=true&output=csv",
+  ms:    LIVE_SHEET_BASE + "?gid=557531360&single=true&output=csv",
+  mslog: LIVE_SHEET_BASE + "?gid=1931683702&single=true&output=csv",
+  diag:  LIVE_SHEET_BASE + "?gid=78694225&single=true&output=csv",
+};
+
+// ── CSV Parser ──
+function liveParseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const hdrs = liveParseLine(lines[0]);
+  return lines.slice(1).map(l => {
+    const v = liveParseLine(l);
+    const o = {};
+    hdrs.forEach((h, i) => { o[h.trim()] = (v[i]||'').trim(); });
+    return o;
+  });
+}
+function liveParseLine(line) {
+  const r=[], n=line.length; let cur='', inQ=false;
+  for(let i=0;i<n;i++) {
+    const c=line[i];
+    if(c==='"') { if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+    else if(c===','&&!inQ) { r.push(cur); cur=''; }
+    else cur+=c;
+  }
+  r.push(cur); return r;
+}
+function liveSV(v) { const s=String(v||'').trim(); return ['None','nan','#N/A','#VALUE!',''].includes(s)?'':s; }
+function liveIV(v) { const n=parseFloat(v); return isNaN(n)?0:Math.round(n); }
+function liveFV(v) { const n=parseFloat(v); return isNaN(n)?0:n; }
+
+// ── CGM Processor (same logic as Python) ──
+const L_TP_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb'26","Mar'26"];
+const L_GF_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan(25)","Feb(25)","Mar(25)","Jan'26","Feb'26","Mar'26"];
+const L_REGS = ['North','West','South'];
+const L_TP_AM_NORM = {'aditya':'Aditya Kumar','aditya kumar':'Aditya Kumar','amit kumar rai':'Amit Kumar Rai','amit rai':'Amit Kumar Rai','ashish rana':'Ashish Rana','niket':'Niket','rafi':'Rafi','rafi khan':'Rafi','shivam ratkal':'Shivam Ratkal'};
+const L_GF_AM_NORM = {'akash':'Akash','muzammil':'Muzammil','muzzamil':'Muzammil','omair':'Omair','shantha':'Shantha'};
+const L_TP_AMS = ['Aditya Kumar','Amit Kumar Rai','Ashish Rana','Niket','Rafi','Shivam Ratkal'];
+const L_GF_AMS = ['Akash','Muzammil','Omair','Shantha'];
+const L_AM_REG_TP = {'Aditya Kumar':'North','Amit Kumar Rai':'North','Ashish Rana':'North','Niket':'West','Rafi':'West','Shivam Ratkal':'South'};
+const L_AM_REG_GF = {'Akash':'North','Muzammil':'South','Omair':'West','Shantha':'South'};
+const L_MO_IN_TP = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
+const L_MO_OUT_TP = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
+const L_MO_GF_FIXED_IN = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
+const L_MO_GF_FIXED_OUT = {'April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec',"Jan(26)":"Jan'26","Feb(26)":"Feb'26","Mar(26)":"Mar'26","January(26)":"Jan'26","Feburary(26)":"Feb'26","March(26)":"Mar'26"};
+const L_BARE_2025 = {'January':'Jan(25)','Feburary':'Feb(25)','March':'Mar(25)'};
+const L_BARE_2026 = {'January':"Jan'26",'Feburary':"Feb'26",'March':"Mar'26"};
+
+function liveNormAM(n, map) { return n ? map[n.toLowerCase().trim()]||null : null; }
+function liveMoGFIn(raw, idx) { const s=(raw||'').trim(); if(L_MO_GF_FIXED_IN[s]) return L_MO_GF_FIXED_IN[s]; if(L_BARE_2025[s]) return idx>=129?L_BARE_2026[s]:L_BARE_2025[s]; return ''; }
+function liveMoGFOut(raw, idx) { const s=(raw||'').trim(); if(L_MO_GF_FIXED_OUT[s]) return L_MO_GF_FIXED_OUT[s]; if(L_BARE_2025[s]) return idx>=129?L_BARE_2026[s]:L_BARE_2025[s]; return ''; }
+
+function liveMkCGM(months) { const o={}; months.forEach(m=>{o[m]={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0};}); return o; }
+
+function liveProcessCGM(tpRows, gfRows) {
+  const tp_tot=liveMkCGM(L_TP_MONTHS), tp_am={}, tp_reg={};
+  L_TP_AMS.forEach(a=>tp_am[a]=liveMkCGM(L_TP_MONTHS));
+  L_REGS.forEach(r=>tp_reg[r]=liveMkCGM(L_TP_MONTHS));
+  tpRows.forEach(row=>{
+    const am=liveNormAM(row['AM']||row['AM '],L_TP_AM_NORM);
+    const m=(L_MO_IN_TP[(row['Month']||'').trim()])||'';
+    const reg=((row['Region ']||row['Region']||'').trim());
+    const regT=reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const aI=d=>{if(!d[m])return;d[m].ai+=liveIV(row['Abbott Qty']);d[m].li+=liveIV(row['Libre 2+']);d[m].tti+=liveIV(row['Tracky transmitter']);d[m].tsi+=liveIV(row['Tracky Sensor']);};
+    aI(tp_tot);if(am&&tp_am[am])aI(tp_am[am]);if(L_REGS.includes(regT))aI(tp_reg[regT]);
+  });
+  tpRows.forEach(row=>{
+    const am=liveNormAM(row['AM.1']||row['AM'],L_TP_AM_NORM);
+    const m=(L_MO_OUT_TP[(row['Month.1']||row['Month_out']||'').trim()])||'';
+    const reg=((row['Region .1']||row['Region_out']||row['Region ']||'').trim());
+    const regT=reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const aO=d=>{if(!d[m])return;d[m].ao+=liveIV(row['Abott given ']||row['Abott given']||row['Abbott given']||0);d[m].lo+=liveIV(row['Libre 2+ given']||row['Libre 2+ given ']||0);};
+    aO(tp_tot);if(am&&tp_am[am])aO(tp_am[am]);if(L_REGS.includes(regT))aO(tp_reg[regT]);
+  });
+  const gf_tot=liveMkCGM(L_GF_MONTHS), gf_am={}, gf_reg={};
+  L_GF_AMS.forEach(a=>gf_am[a]=liveMkCGM(L_GF_MONTHS));
+  L_REGS.forEach(r=>gf_reg[r]=liveMkCGM(L_GF_MONTHS));
+  gfRows.forEach((row,i)=>{
+    const am=liveNormAM(row['AM']||row['AM '],L_GF_AM_NORM);
+    const m=liveMoGFIn(row['Month'],i);
+    const reg=((row['Region ']||row['Region']||'').trim());
+    const regT=reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const aI=d=>{if(!d[m])return;d[m].ai+=liveIV(row['Abbott Qty']);d[m].li+=liveIV(row['Libre 2+']);d[m].tti+=liveIV(row['Tracky transmitter']);d[m].tsi+=liveIV(row['Tracky Sensor']);};
+    aI(gf_tot);if(am&&gf_am[am])aI(gf_am[am]);if(L_REGS.includes(regT))aI(gf_reg[regT]);
+  });
+  gfRows.forEach((row,i)=>{
+    const am=liveNormAM(row['AM.1']||row['OWNER']||row['AM'],L_GF_AM_NORM);
+    const m=liveMoGFOut(row['Month.1']||row['Month_out'],i);
+    const reg=((row['Region .1']||row['Region_out']||row['Region ']||'').trim());
+    const regT=reg?reg[0].toUpperCase()+reg.slice(1).toLowerCase():'';
+    const aO=d=>{if(!d[m])return;d[m].ao+=liveIV(row['Libre given ']||row['Libre given']||0);d[m].lo+=liveIV(row['Libre 2+ Given']||row['Libre 2+ given']||0);d[m].tto+=liveIV(row['Transmittor']||row['Transmittor ']||0);d[m].tso+=liveIV(row['Sensor']||row['Sensor ']||0);};
+    aO(gf_tot);if(am&&gf_am[am])aO(gf_am[am]);if(L_REGS.includes(regT))aO(gf_reg[regT]);
+  });
+  function ml(d,months){return months.map(m=>{const v=d[m]||{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0};return{m,...v};}); }
+  function tot(d,months){const t={ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0};months.forEach(m=>{if(d[m])Object.keys(t).forEach(k=>t[k]+=d[m][k]);});return t;}
+  function bldOrg(ams,am_d,reg_d,tot_d,months,amReg){
+    const ad={};
+    ams.forEach(am=>{
+      const t=tot(am_d[am],months);
+      ad[am]={monthly:ml(am_d[am],months),regions:{North:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},West:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0},South:{ai:0,ao:0,li:0,lo:0,tti:0,tto:0,tsi:0,tso:0}},ti:t.ai+t.li+t.tti+t.tsi,to:t.ao+t.lo+t.tto+t.tso};
+      const r=amReg[am]||'North'; ad[am].regions[r]=t;
+    });
+    const t2=tot(tot_d,months);
+    return{monthly:ml(tot_d,months),regions:Object.fromEntries(L_REGS.map(r=>[r,ml(reg_d[r],months)])),ams:ad,totals:t2,months};
+  }
+  return{tp:bldOrg(L_TP_AMS,tp_am,tp_reg,tp_tot,L_TP_MONTHS,L_AM_REG_TP),gf:bldOrg(L_GF_AMS,gf_am,gf_reg,gf_tot,L_GF_MONTHS,L_AM_REG_GF)};
+}
+
+// ── MySaathi Processor ──
+const L_DRUG_NORM={'semaglyn':'Semaglyn','mashema':'Mashema','alterme':'AlterMe','alterm':'AlterMe'};
+function liveProcessMS(rows){
+  return rows.map(row=>{
+    const drug=liveSV(row['Drug Name']||row['Drug name']||'');
+    const dn=L_DRUG_NORM[drug.toLowerCase()]||drug;
+    let km=liveSV(row['Kit Dispatch Month']||row['Month']||'');
+    if(km==='0')km='';
+    return{name:liveSV(row['Name']||''),state:liveSV(row['State']||''),drug:dn,qr:liveSV(row['QR Type']||'')||'—',status:liveSV(row['Current Status']||row['Status']||''),purchase_month:liveSV(row['Purchase Month']||row['Month']||''),kit_month:km,is_active:liveSV(row['Plan expiry date as per retool']||'')==='Active',diet_book:liveIV(row['Diet booking count']||0),diet_comp:liveIV(row['Diet completion count']||0),phys_book:liveIV(row['Physio Booking count ']||row['Physio Booking count']||0),phys_comp:liveIV(row['Physio completion count']||0),iw:liveFV(row['Initial weight']||0),cw:liveFV(row['Current weight']||0)};
+  });
+}
+
+// ── Logistics Processor ──
+const L_LOG_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function liveProcessLog(rows){
+  const isDel=s=>s.toUpperCase()==='DELIVERED';
+  const isRTO=s=>s.toUpperCase().includes('RTO');
+  const isPend=s=>!isDel(s);
+  const allOrdMo=[...new Set(rows.map(r=>liveSV(r['Month']||r['Month ']||'')).filter(Boolean))];
+  const ALL_MO=L_LOG_MONTHS.filter(m=>allOrdMo.includes(m));
+  const ALL_ST=[...new Set(rows.map(r=>liveSV(r['Status']||'')).filter(Boolean))].sort();
+  function agg(sub){
+    const tot=sub.length,del=sub.filter(r=>isDel(liveSV(r['Status']||''))).length;
+    const pend=tot-del,rto=sub.filter(r=>isRTO(liveSV(r['Status']||''))).length;
+    const oth=pend-rto,fts=sub.map(r=>liveFV(r['Freight Total Amount']||r['Freight total amount']||0));
+    const ft=Math.round(fts.reduce((s,v)=>s+v,0)*100)/100;
+    const fa=tot>0?Math.round(ft/tot*100)/100:0;
+    const sc={};sub.forEach(r=>{const s=liveSV(r['Status']||'');if(s)sc[s]=(sc[s]||0)+1;});
+    const dm={};sub.forEach(r=>{const d=liveSV(r['Month.1']||r['Month_deliv']||'');if(d&&d!=='N/A'&&isDel(liveSV(r['Status']||'')))dm[d]=(dm[d]||0)+1;});
+    return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,status_counts:sc,deliv_by_month:dm};
+  }
+  const lookup={};
+  ['','Delivered','Pending','RTO','Others'].forEach(sg=>{
+    [''].concat(ALL_MO).forEach(mo=>{
+      const key=`${mo}|${sg}`;
+      let f=rows.filter(r=>!mo||liveSV(r['Month']||r['Month ']||'')===mo);
+      if(sg==='Delivered')f=f.filter(r=>isDel(liveSV(r['Status']||'')));
+      else if(sg==='Pending')f=f.filter(r=>isPend(liveSV(r['Status']||'')));
+      else if(sg==='RTO')f=f.filter(r=>isRTO(liveSV(r['Status']||'')));
+      else if(sg==='Others')f=f.filter(r=>isPend(liveSV(r['Status']||''))&&!isRTO(liveSV(r['Status']||'')));
+      lookup[key]=agg(f);
+    });
+  });
+  return{lookup,months:ALL_MO,statuses:ALL_ST,monthly_trend:{}};
+}
+
+// ── Diagnostics Processor ──
+const L_DIAG_MO=["Jan'25","Feb'25","Mar'25","Apr'25","May'25","Jun'25","Jul'25","Aug'25","Sep'25","Oct'25","Nov'25","Dec'25","Jan'26"];
+function liveProcessDiag(rows){
+  const raw=rows.map(r=>{return{mo:liveSV(r['Month']||r['Month ']||''),team:liveSV(r['Team ']||r['Team']||''),type:liveSV(r['Type of order']||''),inv:liveFV(r['Invoice amount(manual)']||0),rev:liveFV(r['Net Revenue']||0),disc:liveFV(r['Discount']||0),tt:liveSV(r['Test Type']||''),partner:liveSV(r['Partner Name ']||r['Partner Name']||'')};;});
+  const ALL_MO=L_DIAG_MO.filter(m=>raw.some(r=>r.mo===m));
+  const ALL_T=[...new Set(raw.map(r=>r.team).filter(Boolean))].sort();
+  const ALL_TY=['B2B','B2C'];
+  const ALL_TT=[...new Set(raw.map(r=>r.tt).filter(Boolean))].sort();
+  const ALL_P=[...new Set(raw.map(r=>r.partner).filter(Boolean))].sort();
+  function agg(sub){
+    const v=sub.filter(r=>r.inv!==0);
+    const tt={};ALL_TT.forEach(t=>{tt[t]={orders:0,rev:0};}); 
+    const pt={};
+    v.forEach(r=>{if(r.tt){tt[r.tt].orders++;tt[r.tt].rev+=r.rev;}if(r.partner){if(!pt[r.partner])pt[r.partner]={orders:0,rev:0};pt[r.partner].orders++;pt[r.partner].rev+=r.rev;}});
+    Object.keys(tt).forEach(k=>tt[k].rev=Math.round(tt[k].rev));
+    Object.keys(pt).forEach(k=>pt[k].rev=Math.round(pt[k].rev));
+    return{orders:v.length,rev:Math.round(v.reduce((s,r)=>s+r.rev,0)),disc:Math.round(v.reduce((s,r)=>s+r.disc,0)),tt,partner:pt};
+  }
+  const lookup={};
+  [''].concat(ALL_MO).forEach(mo=>{[''].concat(ALL_T).forEach(team=>{[''].concat(ALL_TY).forEach(typ=>{
+    const key=`${mo}|${team}|${typ}`;
+    const f=raw.filter(r=>(!mo||r.mo===mo)&&(!team||r.team===team)&&(!typ||r.type===typ));
+    lookup[key]=agg(f);
+  });});});
+  return{lookup,months:ALL_MO,teams:ALL_T,types:ALL_TY,testTypes:ALL_TT,partners:ALL_P};
+}
+
+// ── Refresh Function ──
+async function refreshFromSheets() {
+  const btn = document.getElementById('refresh_btn');
+  const badge = document.getElementById('data_badge');
+  if(btn) { btn.textContent='⏳ LOADING...'; btn.disabled=true; }
+  try {
+    const [tpR,gfR,msR,logR,diagR] = await Promise.all([
+      fetch(LIVE_URLS.tp).then(r=>r.text()).then(liveParseCSV),
+      fetch(LIVE_URLS.gf).then(r=>r.text()).then(liveParseCSV),
+      fetch(LIVE_URLS.ms).then(r=>r.text()).then(liveParseCSV),
+      fetch(LIVE_URLS.mslog).then(r=>r.text()).then(liveParseCSV),
+      fetch(LIVE_URLS.diag).then(r=>r.text()).then(liveParseCSV),
+    ]);
+    const cgm = liveProcessCGM(tpR, gfR);
+    D         = { tp: cgm.tp, gf: cgm.gf };
+    MS_RAW    = liveProcessMS(msR);
+    LOGISTICS = liveProcessLog(logR);
+    DIAG      = liveProcessDiag(diagR);
+    if(badge) { badge.textContent='● LIVE DATA'; badge.style.color='#86efac'; }
+    if(btn) { btn.textContent='✅ UPDATED'; setTimeout(()=>{ btn.textContent='🔄 REFRESH'; btn.disabled=false; },2000); }
+    // Re-render current view
+    if(currentMain==='cgm') renderCGMContent();
+    else if(currentMain==='pe') renderPEC();
+    else if(currentMain==='ms') renderMSContent();
+    else if(currentMain==='diag') renderDiagContent();
+  } catch(e) {
+    if(btn) { btn.textContent='❌ FAILED'; btn.style.color='#fca5a5'; setTimeout(()=>{ btn.textContent='🔄 REFRESH'; btn.disabled=false; btn.style.color=''; },3000); }
+    console.error('Refresh failed:', e.message);
   }
 }
 
