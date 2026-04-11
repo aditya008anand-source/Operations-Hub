@@ -1247,17 +1247,26 @@ const LIVE_URLS = {
 
 // ── CSV Parser → returns array of arrays (raw rows) ──
 function liveParseCSVRaw(text) {
-  const lines = text.trim().split('\n');
-  return lines.map(line => {
-    const r = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
-      else if (c === ',' && !inQ) { r.push(cur.trim()); cur = ''; }
-      else cur += c;
+  // Proper CSV parser that handles quoted fields with embedded newlines
+  const rows = []; let row = []; let cur = ''; let inQ = false;
+  const t = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '"') {
+      if (inQ && t[i+1] === '"') { cur += '"'; i++; }
+      else { inQ = !inQ; }
+    } else if (c === ',' && !inQ) {
+      row.push(cur.trim()); cur = '';
+    } else if (c === '\n' && !inQ) {
+      row.push(cur.trim()); cur = '';
+      if (row.some(f => f !== '')) rows.push(row);
+      row = [];
+    } else {
+      cur += c;
     }
-    r.push(cur.trim()); return r;
-  });
+  }
+  if (cur || row.length) { row.push(cur.trim()); if (row.some(f => f !== '')) rows.push(row); }
+  return rows;
 }
 
 function liveIV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
