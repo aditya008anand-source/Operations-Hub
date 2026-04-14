@@ -1396,8 +1396,11 @@ function liveProcessLog(logRaw) {
   const isRTO = s => (s||'').toUpperCase().includes('RTO');
   const isPend = s => !isDel(s);
   const L_MO_ORD = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  // Normalise abbreviated month names (Mar→March, Apr→April etc.)
+  const MO_NORM = {Jan:'January',Feb:'February',Mar:'March',Apr:'April',May:'May',Jun:'June',Jul:'July',Aug:'August',Sep:'September',Oct:'October',Nov:'November',Dec:'December'};
+  function normMo(v){ const s=liveSV(v||''); return MO_NORM[s]||s; }
   const rows = logRaw.slice(1);
-  const allMo = [...new Set(rows.map(r=>liveSV(r[3]||'')).filter(Boolean))];
+  const allMo = [...new Set(rows.map(r=>normMo(r[3]||'')).filter(Boolean))];
   const ALL_MO = L_MO_ORD.filter(m=>allMo.includes(m));
   const ALL_ST = [...new Set(rows.map(r=>liveSV(r[7]||'')).filter(Boolean))].sort();
   function agg(sub) {
@@ -1407,14 +1410,14 @@ function liveProcessLog(logRaw) {
     const ft=Math.round(fts.reduce((s,v)=>s+v,0)*100)/100;
     const fa=tot>0?Math.round(ft/tot*100)/100:0;
     const sc={};sub.forEach(r=>{const s=liveSV(r[7]||'');if(s)sc[s]=(sc[s]||0)+1;});
-    const dm={};sub.forEach(r=>{const d=liveSV(r[9]||'');if(d&&d!=='N/A'&&isDel(liveSV(r[7]||'')))dm[d]=(dm[d]||0)+1;});
+    const dm={};sub.forEach(r=>{const d=normMo(r[9]||'');if(d&&d!=='N/A'&&isDel(liveSV(r[7]||'')))dm[d]=(dm[d]||0)+1;});
     return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,status_counts:sc,deliv_by_month:dm};
   }
   const lookup={};
   ['','Delivered','Pending','RTO','Others'].forEach(sg=>{
     [''].concat(ALL_MO).forEach(mo=>{
       const key=`${mo}|${sg}`;
-      let f=rows.filter(r=>!mo||liveSV(r[3]||'')=== mo);
+      let f=rows.filter(r=>!mo||normMo(r[3]||'')=== mo);
       if(sg==='Delivered')f=f.filter(r=>isDel(liveSV(r[7]||'')));
       else if(sg==='Pending')f=f.filter(r=>isPend(liveSV(r[7]||'')));
       else if(sg==='RTO')f=f.filter(r=>isRTO(liveSV(r[7]||'')));
