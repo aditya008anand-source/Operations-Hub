@@ -162,6 +162,7 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
   <button class="main-tab" onclick="switchMain('pe',this)">🧑‍⚕️ Patient Engagement</button>
   <button class="main-tab" onclick="switchMain('ms',this)">💊 Mysaathi</button>
   <button class="main-tab" onclick="switchMain('diag',this)">🔬 Diagnostics</button>
+  <button class="main-tab" onclick="switchMain('cgmnew',this)">🩺 Goodflip & Diasens CGM</button>
   <button class="main-tab" onclick="switchMain('skill',this)">🎯 About</button>
   <div class="topbar-right">
     <button id="refresh_btn" onclick="refreshFromSheets()" style="
@@ -1223,6 +1224,7 @@ function switchMain(m,el){
   document.querySelectorAll('.main-tab').forEach(t=>t.classList.remove('active'));
   if(el)el.classList.add('active');
   if(m==='skill'){renderSkill();return}
+  if(m==='cgmnew'){loadCGMData();renderCGMModule();return}
   if(m==='cgm'){renderCGMSidebar();renderCGMContent()}
   else if(m==='pe'){peTeam='mgmt';peMonth='';pePlan='other';renderPESidebar();renderPEC()}
   else if(m==='ms'){renderMS()}
@@ -2597,6 +2599,467 @@ function initMSLog(){
     </table></div>`;
   }
 }
+
+
+
+// ═══ CGM MODULE ═══
+// ════════════════════════════════════════════════════════════
+//  GOODFLIP & DIASENS CGM MODULE
+//  Self-contained — does NOT touch any existing dashboard code
+// ════════════════════════════════════════════════════════════
+
+// ══ CGM MODULE ══
+// ══════════════════════════════════════════════════════════════════
+//  GOODFLIP & DIASENS CGM MODULE
+//  Live data from 4 Google Sheets sub-tabs
+//  Inserted as self-contained block — touches nothing else
+// ══════════════════════════════════════════════════════════════════
+
+// ── GIDs ──
+const CGM_URLS = {
+  db:      'https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub?gid=749455973&single=true&output=csv',
+  install: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub?gid=313024005&single=true&output=csv',
+  tickets: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub?gid=232152646&single=true&output=csv',
+  replace: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQscA-Y05gGsr6xx54awNYgJJnCLoirIf5IKsNHRmLFYyBqtUL1khVmy3cP_L3U0pG1G6vMPPOqiNNO/pub?gid=1907497743&single=true&output=csv',
+};
+
+// ── State ──
+let cgmData = null;           // processed data store
+let cgmTab = 'summary';       // 'summary' | 'goodflip' | 'diasens'
+let cgmFilter = '';           // '' = all, or 'Mar 2026' etc.
+let cgmLoading = false;
+
+// ── Helpers ──
+function cgmSV(v){ const s=String(v||'').trim(); return ['None','nan','#N/A','#VALUE!','#REF!',''].includes(s)?'':s; }
+
+function cgmNormPhone(v){
+  let s=cgmSV(v);
+  s=s.replace(/\+91[-\s]?/g,'').replace(/^91(?=\d{10})/,'');
+  const nums=(s.replace(/\s/g,'').match(/\d{10}/g)||[]);
+  return nums.filter(n=>'6789'.includes(n[0]));
+}
+
+function cgmParseDate(v){
+  const s=cgmSV(v).trim(); if(!s) return null;
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MMAP={january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+  
+  // ISO: 2026-03-02T09:00:00
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){const y=+m[1],mo=+m[2];if(y>=2024&&y<=2027)return{y,mo,label:`${MONTHS[mo-1]} ${y}`};}
+  
+  // User DB: "June 5, 2026, 9:56 AM" or "June 5, 2026"
+  m=s.match(/^([A-Za-z]+)\s+\d+,\s+(\d{4})/);
+  if(m){const mo=MMAP[m[1].toLowerCase()];const y=+m[2];if(mo!==undefined&&y>=2024&&y<=2027)return{y,mo:mo+1,label:`${MONTHS[mo]} ${y}`};}
+  
+  // MM-DD-YYYY or MM/DD/YYYY (tickets)
+  m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if(m){const mo=+m[1],y=+m[3];if(mo>=1&&mo<=12&&y>=2024&&y<=2027)return{y,mo,label:`${MONTHS[mo-1]} ${y}`};}
+  
+  // DD-Mon-YY or DD-Mon-YYYY (replacements: 16-Mar-26, 01-Jun-26)
+  m=s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/i);
+  if(m){const mo=MONTHS.findIndex(x=>x.toLowerCase()===m[2].toLowerCase())+1;let y=+m[3];if(y<100)y+=2000;if(mo>=1&&y>=2024&&y<=2027)return{y,mo,label:`${MONTHS[mo-1]} ${y}`};}
+  
+  // DD-MM-YYYY (05-08-2026)
+  m=s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if(m){const dd=+m[1],mo=+m[2],y=+m[3];if(dd<=31&&mo>=1&&mo<=12&&y>=2024&&y<=2027)return{y,mo,label:`${MONTHS[mo-1]} ${y}`};}
+  
+  // Plain month name: "March" (tickets fallback)
+  const mn=MMAP[s.toLowerCase()];
+  if(mn!==undefined)return{y:2026,mo:mn+1,label:`${MONTHS[mn]} 2026`};
+  
+  return null;
+}
+
+function cgmParseCSV(text){
+  const rows=[]; let row=[]; let cur=''; let inQ=false;
+  const t=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<t.length;i++){
+    const c=t[i];
+    if(c==='"'){if(inQ&&t[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+    else if(c===','&&!inQ){row.push(cur.trim());cur='';}
+    else if(c==='\n'&&!inQ){row.push(cur.trim());cur='';if(row.some(f=>f!==''))rows.push(row);row=[];}
+    else cur+=c;
+  }
+  if(cur||row.length){row.push(cur.trim());if(row.some(f=>f!==''))rows.push(row);}
+  return rows;
+}
+
+// ── Data Processor ──
+function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
+  const db=[], ins=[], tks=[], rps=[];
+
+  // DB: col[0]=name, col[1]=mobile, col[4]=start_date, col[6]=cgm_type, col[7]=status
+  dbRaw.slice(1).forEach(r=>{
+    const d=cgmParseDate(r[4]||''); if(!d) return;
+    const phones=cgmNormPhone(r[1]||'');
+    db.push({phone:phones[0]||'',cgm:(r[6]||'').toLowerCase()==='diasens'?'diasens':'goodflip',
+      y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[7]||''),name:cgmSV(r[0]||'')});
+  });
+
+  // Install: col[4]=start_at, col[8]=status, col[23]=phone, col[39]=cgm
+  inRaw.slice(1).forEach(r=>{
+    const d=cgmParseDate(r[4]||''); if(!d) return;
+    const phones=cgmNormPhone(r[23]||'');
+    const cgmRaw=(r[39]||'').toLowerCase();
+    ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
+      y:d.y,mo:d.mo,label:d.label,status:(r[8]||'').toLowerCase()});
+  });
+
+  // Tickets: col[7]=date(MM-DD-YYYY), col[4]=level2, col[6]=status, col[10]=TAT,
+  //          col[16]=phone, col[23]=cgm_type, col[19]=resolution
+  tkRaw.slice(1).forEach(r=>{
+    let d=cgmParseDate(r[7]||'');
+    if(!d) d=cgmParseDate(r[14]||'');
+    if(!d) return;
+    const phones=cgmNormPhone(r[16]||'');
+    let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat))tat=null;}catch(e){}
+    const cgmRaw=cgmSV(r[23]||'');
+    tks.push({phone:phones[0]||'',cgm:cgmRaw==='Diasens'?'diasens':'goodflip',
+      y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[6]||''),
+      level2:cgmSV(r[4]||''),tat,resolution:cgmSV(r[19]||''),hasPhone:phones.length>0});
+  });
+
+  // Replacements: col[0]=name, col[1]=phone, col[2]=product, col[3]=approved_by,
+  //               col[4]=date, col[8]=cgm_type
+  rpRaw.slice(1).forEach(r=>{
+    const d=cgmParseDate(r[4]||''); if(!d) return;
+    const phones=cgmNormPhone(r[1]||'');
+    const cgmRaw=(r[8]||'').toLowerCase();
+    rps.push({phones,cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
+      y:d.y,mo:d.mo,label:d.label,
+      product:(r[2]||'').toLowerCase(),
+      approvedBy:cgmSV(r[3]||''),name:cgmSV(r[0]||'')});
+  });
+
+  // All months sorted
+  const MO_ORDER=['Jan 2026','Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026',
+                  'Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026'];
+  const allMos=[...new Set([...db,...ins,...tks,...rps].map(r=>r.label).filter(Boolean))];
+  const months=allMos.sort((a,b)=>{const ia=MO_ORDER.indexOf(a),ib=MO_ORDER.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});
+
+  // Aggregate per month per CGM
+  function agg(mo, cgm){
+    const dbF  = db.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
+    const insF = ins.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
+    const tkF  = tks.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
+    const rpF  = rps.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
+
+    const dbTotal   = dbF.length;
+    const inBooked  = insF.length;
+    const inDone    = insF.filter(r=>r.status==='completed').length;
+    const tkTotal   = tkF.length;
+    const tkClosed  = tkF.filter(r=>r.status==='Closed').length;
+    const tkTech    = tkF.filter(r=>r.level2==='Tech Issue').length;
+    const tkNonTech = tkF.filter(r=>r.level2==='Non-Tech Issue').length;
+    const tatVals   = tkF.filter(r=>r.tat!==null&&r.tat>=0).map(r=>r.tat);
+    const avgTAT    = tatVals.length>0?Math.round(tatVals.reduce((a,b)=>a+b,0)/tatVals.length):0;
+    const rpTotal   = rpF.length;
+    const rpSensor  = rpF.filter(r=>r.product.includes('sensor')&&!r.product.includes('transmitter')).length;
+    const rpTrans   = rpF.filter(r=>r.product.includes('transmitter')).length;
+
+    const pctInstall = dbTotal>0?Math.round(inDone/dbTotal*100):0;
+    const pctTicket  = dbTotal>0?Math.round(tkTotal/dbTotal*100):0;
+    const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;
+
+    // Issue type breakdown
+    const issueTypes={};
+    tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
+
+    return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,
+           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,issueTypes};
+  }
+
+  // Build lookup for all months + overall
+  const lookup={};
+  ['goodflip','diasens'].forEach(cgm=>{
+    lookup[cgm]={overall:agg('',cgm), monthly:{}};
+    months.forEach(mo=>{ lookup[cgm].monthly[mo]=agg(mo,cgm); });
+  });
+
+  return{months, lookup};
+}
+
+// ── Render ──
+function cgmGetData(cgm, mo){
+  if(!cgmData) return null;
+  if(mo) return cgmData.lookup[cgm]?.monthly[mo]||null;
+  return cgmData.lookup[cgm]?.overall||null;
+}
+
+function cgmFmtPct(n){ return n+'%'; }
+function cgmFmtNum(n){ return n.toLocaleString(); }
+
+function cgmKPI(label, value, sub, color='var(--brand)'){
+  return `<div class="kpi" style="--kc:${color}">
+    <div class="kpi-lbl">${label}</div>
+    <div class="kpi-val">${value}</div>
+    ${sub?`<div class="kpi-sub">${sub}</div>`:''}
+  </div>`;
+}
+
+// ── Summary Tab ──
+function buildCGMSummary(){
+  const months = cgmFilter ? [cgmFilter] : (cgmData?.months||[]).slice(-3);
+  const cgms   = ['goodflip','diasens'];
+  const METRICS = [
+    {key:'dbTotal',      label:'Total patients on DB'},
+    {key:'inBooked',     label:'Booked for installation'},
+    {key:'inDone',       label:'Completed'},
+    {key:'tkTotal',      label:'Ticket received'},
+    {key:'tkClosed',     label:'Ticket closed'},
+    {key:'tkTech',       label:'Tech'},
+    {key:'avgTAT',       label:'Tech resolution TAT', suffix:'hrs'},
+    {key:'tkNonTech',    label:'Non tech'},
+    {key:'rpTotal',      label:'Replacement'},
+    {key:'pctInstall',   label:'% installation overall', pct:true},
+    {key:'pctTicket',    label:'% ticket coverage', pct:true},
+    {key:'pctReplace',   label:'% Replacement', pct:true},
+  ];
+
+  let html = `<div class="page-header">
+    <div class="page-title">📊 CGM Summary Report</div>
+    <div class="page-sub">Goodflip & Diasens · ${cgmFilter||'Last 3 months'}</div>
+  </div>
+  ${cgmFilterBar()}
+  <div style="overflow-x:auto;margin-top:20px">
+  <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:700px">
+    <thead>
+      <tr style="background:var(--brand);color:#fff">
+        <th style="padding:10px 14px;text-align:left;min-width:200px">Metric</th>`;
+
+  // Headers: GoodFlip months + Diasens months
+  ['GoodFlip','Diasens'].forEach(cgmLabel=>{
+    months.forEach(mo=>{
+      html+=`<th style="padding:10px 8px;text-align:center;border-left:${cgmLabel==='Diasens'?'3px solid rgba(255,255,255,.4)':'1px solid rgba(255,255,255,.2)'}">${cgmLabel}<br><span style="font-weight:400;font-size:11px">${mo}</span></th>`;
+    });
+  });
+
+  html+=`</tr></thead><tbody>`;
+
+  METRICS.forEach((metric,idx)=>{
+    const bg = idx%2===0?'var(--surface)':'#f8fafc';
+    html+=`<tr style="background:${bg}">
+      <td style="padding:9px 14px;font-weight:500;color:var(--text);border-right:1px solid var(--border)">${metric.label}</td>`;
+
+    ['goodflip','diasens'].forEach((cgm,ci)=>{
+      months.forEach((mo,mi)=>{
+        const d = cgmGetData(cgm, mo);
+        const v = d?d[metric.key]:0;
+        const disp = metric.pct ? `${v}%` : (metric.suffix ? `${v}${metric.suffix}` : cgmFmtNum(v));
+        const border = ci===1&&mi===0 ? 'border-left:3px solid var(--border-strong)' : 'border-left:1px solid var(--border)';
+        html+=`<td style="padding:9px 8px;text-align:center;color:${metric.pct?'var(--brand)':'var(--text)'};${border}">${disp}</td>`;
+      });
+    });
+    html+=`</tr>`;
+  });
+
+  html+=`</tbody></table></div>`;
+
+  // Trend charts
+  if((cgmData?.months||[]).length>1){
+    html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px">
+      <div class="card"><div class="card-title">📈 Patients on DB — Trend</div><canvas id="cgm_trend_db" height="180"></canvas></div>
+      <div class="card"><div class="card-title">🔧 Installations Completed — Trend</div><canvas id="cgm_trend_install" height="180"></canvas></div>
+      <div class="card"><div class="card-title">🎫 Tickets Received — Trend</div><canvas id="cgm_trend_tickets" height="180"></canvas></div>
+      <div class="card"><div class="card-title">🔄 Replacements — Trend</div><canvas id="cgm_trend_replace" height="180"></canvas></div>
+    </div>`;
+  }
+
+  return html;
+}
+
+function initCGMSummaryCharts(){
+  if(!cgmData) return;
+  const allMos = cgmData.months;
+  const moFilter = cgmFilter ? [cgmFilter] : allMos;
+  const labs = moFilter;
+
+  function ds(cgm, key, color){
+    return{label:cgm==='goodflip'?'Goodflip':'Diasens',
+      data:labs.map(m=>(cgmGetData(cgm,m)||{})[key]||0),
+      borderColor:color,backgroundColor:color+'33',
+      tension:.3,fill:true,pointRadius:4};
+  }
+
+  const charts=[
+    {id:'cgm_trend_db',      key:'dbTotal'},
+    {id:'cgm_trend_install', key:'inDone'},
+    {id:'cgm_trend_tickets', key:'tkTotal'},
+    {id:'cgm_trend_replace', key:'rpTotal'},
+  ];
+
+  charts.forEach(({id,key})=>{
+    const el=document.getElementById(id); if(!el) return;
+    new Chart(el,{type:'line',data:{labels:labs,datasets:[
+      ds('goodflip',key,'#1a6b4a'),
+      ds('diasens',key,'#0ea5e9'),
+    ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:11}}}},
+      scales:{x:{ticks:{color:'#64748b'}},y:{beginAtZero:true,ticks:{color:'#64748b'}}}}});
+  });
+}
+
+// ── Individual CGM Tab ──
+function buildCGMTab(cgm){
+  const d = cgmGetData(cgm, cgmFilter);
+  if(!d) return '<div style="padding:40px;text-align:center;color:var(--muted)">Loading data...</div>';
+  const label = cgm==='goodflip'?'Goodflip CGM':'Diasens CGM';
+  const mo = cgmFilter||'All Months';
+
+  return `<div class="page-header">
+    <div class="page-title">${cgm==='goodflip'?'💚':'💙'} ${label}</div>
+    <div class="page-sub">${mo}</div>
+  </div>
+  ${cgmFilterBar()}
+
+  <div style="margin-top:20px">
+
+    <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">📊 Overview</div>
+    <div class="kpi-grid">
+      ${cgmKPI('Total Patients on DB', cgmFmtNum(d.dbTotal), mo, 'var(--brand)')}
+      ${cgmKPI('Booked for Installation', cgmFmtNum(d.inBooked), `${d.inDone} completed`, '#0ea5e9')}
+      ${cgmKPI('% Installation', cgmFmtPct(d.pctInstall), `${d.inDone} done of ${d.dbTotal}`, '#8b5cf6')}
+    </div>
+
+    <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px">🎫 Tickets & Support</div>
+    <div class="kpi-grid">
+      ${cgmKPI('Tickets Received', cgmFmtNum(d.tkTotal), `${d.tkClosed} closed`, '#f59e0b')}
+      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
+      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), '', '#f97316')}
+      ${cgmKPI('% Ticket Coverage', cgmFmtPct(d.pctTicket), `of ${d.dbTotal} patients`, '#0ea5e9')}
+    </div>
+
+    <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px">🔄 Replacements</div>
+    <div class="kpi-grid">
+      ${cgmKPI('Replacements', cgmFmtNum(d.rpTotal), `${d.rpSensor} sensor · ${d.rpTrans} transmitter`, '#6366f1')}
+      ${cgmKPI('% Replacement', cgmFmtPct(d.pctReplace), `of ${d.dbTotal} patients`, '#ec4899')}
+      ${cgmKPI('Careplan Orders', cgmFmtNum(0), 'Goodflip · ₹0 invoice', '#0ea5e9')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px">
+      <div class="card"><div class="card-title">📈 Monthly Trend</div><canvas id="cgm_${cgm}_trend" height="200"></canvas></div>
+      <div class="card"><div class="card-title">🎫 Issue Types</div><canvas id="cgm_${cgm}_issues" height="200"></canvas></div>
+    </div>
+
+  </div>`;
+}
+
+function initCGMTabCharts(cgm){
+  if(!cgmData) return;
+  const allMos = cgmData.months;
+  const labs = allMos;
+
+  // Trend
+  const tEl=document.getElementById(`cgm_${cgm}_trend`); 
+  if(tEl){
+    new Chart(tEl,{type:'bar',data:{labels:labs,datasets:[
+      {label:'DB Patients',data:labs.map(m=>(cgmGetData(cgm,m)||{}).dbTotal||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4},
+      {label:'Tickets',data:labs.map(m=>(cgmGetData(cgm,m)||{}).tkTotal||0),backgroundColor:'rgba(245,158,11,.7)',borderRadius:4},
+      {label:'Replacements',data:labs.map(m=>(cgmGetData(cgm,m)||{}).rpTotal||0),backgroundColor:'rgba(99,102,241,.7)',borderRadius:4},
+    ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:10}}}},
+      scales:{x:{ticks:{color:'#64748b'},stacked:false},y:{beginAtZero:true,ticks:{color:'#64748b'}}}}});
+  }
+
+  // Issue types donut
+  const iEl=document.getElementById(`cgm_${cgm}_issues`);
+  if(iEl){
+    const d=cgmGetData(cgm,cgmFilter)||cgmGetData(cgm,'')||{};
+    const types=d.issueTypes||{};
+    const labels=Object.keys(types); const vals=labels.map(k=>types[k]);
+    const colors=['#ef4444','#f59e0b','#0ea5e9','#8b5cf6','#10b981','#f97316'];
+    if(labels.length>0){
+      new Chart(iEl,{type:'doughnut',data:{labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:2}]},
+        options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#64748b',font:{size:10}}}}}});
+    }
+  }
+}
+
+// ── Filter Bar ──
+function cgmFilterBar(){
+  if(!cgmData) return '';
+  const opts=cgmData.months.map(m=>`<option value="${m}" ${cgmFilter===m?'selected':''}>${m}</option>`).join('');
+  return `<div class="cgm-filter-bar" style="flex-wrap:wrap;gap:16px;margin-top:16px">
+    <div class="cfb-group">
+      <span class="cfb-label">📅 Month</span>
+      <select class="month-select" onchange="setCGMFilter(this.value)">
+        <option value="" ${!cgmFilter?'selected':''}>All Months</option>
+        ${opts}
+      </select>
+    </div>
+    <div class="cfb-divider"></div>
+    <button class="cfb-reset" onclick="setCGMFilter('')">↺ Reset</button>
+    ${cgmFilter?`<span style="font-size:11px;color:var(--muted);font-style:italic">Showing ${cgmFilter}</span>`:''}
+  </div>`;
+}
+
+function setCGMFilter(val){ cgmFilter=val; renderCGMModule(); }
+
+// ── Sub-tab Nav ──
+function buildCGMNav(){
+  const tabs=[{id:'summary',label:'📊 Summary'},{id:'goodflip',label:'💚 Goodflip CGM'},{id:'diasens',label:'💙 Diasens CGM'}];
+  return `<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--surface);border-radius:12px 12px 0 0;overflow:hidden">
+    ${tabs.map(t=>`<button onclick="setCGMTab('${t.id}')" style="padding:12px 20px;border:none;cursor:pointer;font-size:13px;font-weight:${cgmTab===t.id?'600':'400'};color:${cgmTab===t.id?'var(--brand)':'var(--muted)'};background:${cgmTab===t.id?'#fff':'transparent'};border-bottom:${cgmTab===t.id?'2px solid var(--brand)':'2px solid transparent'};margin-bottom:-2px;transition:all .2s">${t.label}</button>`).join('')}
+  </div>`;
+}
+
+function setCGMTab(tab){ cgmTab=tab; renderCGMModule(); }
+
+// ── Main Render ──
+function renderCGMModule(){
+  const el=document.getElementById('content'); if(!el) return;
+
+  let inner='';
+  if(!cgmData){
+    inner=`<div style="padding:60px;text-align:center">
+      <div style="font-size:32px;margin-bottom:12px">🔄</div>
+      <div style="color:var(--muted)">Loading CGM data...</div>
+    </div>`;
+  } else {
+    let tabContent='';
+    if(cgmTab==='summary') tabContent=buildCGMSummary();
+    else tabContent=buildCGMTab(cgmTab);
+
+    inner=`<div style="display:flex;flex-direction:column;gap:0">
+      ${buildCGMNav()}
+      <div style="background:#fff;border-radius:0 0 12px 12px;padding:24px;border:1px solid var(--border);border-top:none">
+        ${tabContent}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML=inner;
+
+  setTimeout(()=>{
+    if(cgmTab==='summary') initCGMSummaryCharts();
+    else initCGMTabCharts(cgmTab);
+  },50);
+}
+
+// ── Load CGM Data ──
+async function loadCGMData(){
+  if(cgmLoading||cgmData) return;
+  cgmLoading=true;
+  renderCGMModule();
+  try{
+    const [dbR,inR,tkR,rpR]=await Promise.all([
+      fetch(CGM_URLS.db).then(r=>r.text()).then(cgmParseCSV),
+      fetch(CGM_URLS.install).then(r=>r.text()).then(cgmParseCSV),
+      fetch(CGM_URLS.tickets).then(r=>r.text()).then(cgmParseCSV),
+      fetch(CGM_URLS.replace).then(r=>r.text()).then(cgmParseCSV),
+    ]);
+    cgmData=cgmProcess(dbR,inR,tkR,rpR);
+    // Default filter: last 3 months
+    if(!cgmFilter && cgmData.months.length>0){
+      cgmFilter=''; // show all, summary will slice last 3
+    }
+  }catch(e){
+    console.error('CGM load error:',e);
+    cgmData={months:[],lookup:{goodflip:{overall:{},monthly:{}},diasens:{overall:{},monthly:{}}}};
+  }
+  cgmLoading=false;
+  renderCGMModule();
+}
+
 
 </script>
 </body>
