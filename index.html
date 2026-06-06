@@ -2755,8 +2755,8 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const tkTech    = tkF.filter(r=>r.level2==='Tech Issue').length;
     const tkNonTech = tkF.filter(r=>r.level2==='Non-Tech Issue').length;
     // TAT: include 0 (instant resolution), exclude null only
-    const techRows    = tkF.filter(r=>r.level2==='Tech Issue'&&r.tat!==null);
-    const nonTechRows = tkF.filter(r=>r.level2==='Non-Tech Issue'&&r.tat!==null);
+    const techRows    = tkF.filter(r=>r.level2==='Tech Issue'&&r.tat!==null&&r.tat>=0);
+    const nonTechRows = tkF.filter(r=>r.level2==='Non-Tech Issue'&&r.tat!==null&&r.tat>=0);
     const avgTAT      = techRows.length>0?Math.round(techRows.reduce((s,r)=>s+r.tat,0)/techRows.length):0;
     const avgNonTechTAT = nonTechRows.length>0?Math.round(nonTechRows.reduce((s,r)=>s+r.tat,0)/nonTechRows.length):0;
     const rpTotal   = rpF.length;
