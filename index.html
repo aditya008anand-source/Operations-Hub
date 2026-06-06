@@ -151,6 +151,7 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
 @media(max-width:900px){.cg2,.cg3,.cg4{grid-template-columns:1fr 1fr}}
 @media(max-width:640px){#topbar{padding:0 12px}#content{padding:14px}#sidebar{width:190px;min-width:190px}.cg2,.cg3,.cg4{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div id="topbar">
@@ -1224,7 +1225,8 @@ function switchMain(m,el){
   document.querySelectorAll('.main-tab').forEach(t=>t.classList.remove('active'));
   if(el)el.classList.add('active');
   if(m==='skill'){renderSkill();return}
-  if(m==='cgmnew'){loadCGMData();renderCGMModule();return}
+  if(m==='cgmnew'){document.getElementById('sidebar').style.display='none';loadCGMData();renderCGMModule();return}
+  document.getElementById('sidebar').style.display='';
   if(m==='cgm'){renderCGMSidebar();renderCGMContent()}
   else if(m==='pe'){peTeam='mgmt';peMonth='';pePlan='other';renderPESidebar();renderPEC()}
   else if(m==='ms'){renderMS()}
@@ -2752,8 +2754,11 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const tkClosed  = tkF.filter(r=>r.status==='Closed').length;
     const tkTech    = tkF.filter(r=>r.level2==='Tech Issue').length;
     const tkNonTech = tkF.filter(r=>r.level2==='Non-Tech Issue').length;
-    const tatVals   = tkF.filter(r=>r.tat!==null&&r.tat>=0).map(r=>r.tat);
-    const avgTAT    = tatVals.length>0?Math.round(tatVals.reduce((a,b)=>a+b,0)/tatVals.length):0;
+    // TAT: include 0 (instant resolution), exclude null only
+    const techRows    = tkF.filter(r=>r.level2==='Tech Issue'&&r.tat!==null);
+    const nonTechRows = tkF.filter(r=>r.level2==='Non-Tech Issue'&&r.tat!==null);
+    const avgTAT      = techRows.length>0?Math.round(techRows.reduce((s,r)=>s+r.tat,0)/techRows.length):0;
+    const avgNonTechTAT = nonTechRows.length>0?Math.round(nonTechRows.reduce((s,r)=>s+r.tat,0)/nonTechRows.length):0;
     const rpTotal   = rpF.length;
     const rpSensor  = rpF.filter(r=>r.product.includes('sensor')&&!r.product.includes('transmitter')).length;
     const rpTrans   = rpF.filter(r=>r.product.includes('transmitter')).length;
@@ -2766,7 +2771,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const issueTypes={};
     tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
 
-    return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,
+    return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
            rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,issueTypes};
   }
 
@@ -2811,6 +2816,7 @@ function buildCGMSummary(){
     {key:'tkTech',       label:'Tech'},
     {key:'avgTAT',       label:'Tech resolution TAT', suffix:'hrs'},
     {key:'tkNonTech',    label:'Non tech'},
+    {key:'avgNonTechTAT',label:'Non tech resolution TAT', suffix:'hrs'},
     {key:'rpTotal',      label:'Replacement'},
     {key:'pctInstall',   label:'% installation overall', pct:true},
     {key:'pctTicket',    label:'% ticket coverage', pct:true},
@@ -2855,6 +2861,15 @@ function buildCGMSummary(){
   });
 
   html+=`</tbody></table></div>`;
+
+  // Download button
+  html += `<div style="margin-top:20px;padding:16px;background:var(--surface);border-radius:10px;border:1px solid var(--border);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <span style="font-weight:600;color:var(--text);font-size:13px">📥 Download Report</span>
+    <div id="cgm_dl_months" style="display:flex;gap:8px;flex-wrap:wrap">
+      ${(cgmData?.months||[]).map(m=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;background:#f1f5f9;padding:4px 10px;border-radius:6px;border:1px solid var(--border)"><input type="checkbox" value="${m}" class="cgm-dl-mo" style="cursor:pointer"> ${m}</label>`).join('')}
+    </div>
+    <button onclick="cgmDownloadExcel()" style="padding:8px 18px;background:var(--brand);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">⬇ Download Excel</button>
+  </div>`;
 
   // Trend charts
   if((cgmData?.months||[]).length>1){
@@ -2925,7 +2940,7 @@ function buildCGMTab(cgm){
     <div class="kpi-grid">
       ${cgmKPI('Tickets Received', cgmFmtNum(d.tkTotal), `${d.tkClosed} closed`, '#f59e0b')}
       ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
-      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), '', '#f97316')}
+      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
       ${cgmKPI('% Ticket Coverage', cgmFmtPct(d.pctTicket), `of ${d.dbTotal} patients`, '#0ea5e9')}
     </div>
 
@@ -2953,9 +2968,11 @@ function initCGMTabCharts(cgm){
   const tEl=document.getElementById(`cgm_${cgm}_trend`); 
   if(tEl){
     new Chart(tEl,{type:'bar',data:{labels:labs,datasets:[
-      {label:'DB Patients',data:labs.map(m=>(cgmGetData(cgm,m)||{}).dbTotal||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4},
-      {label:'Tickets',data:labs.map(m=>(cgmGetData(cgm,m)||{}).tkTotal||0),backgroundColor:'rgba(245,158,11,.7)',borderRadius:4},
-      {label:'Replacements',data:labs.map(m=>(cgmGetData(cgm,m)||{}).rpTotal||0),backgroundColor:'rgba(99,102,241,.7)',borderRadius:4},
+      {label:'DB Patients',   data:labs.map(m=>(cgmGetData(cgm,m)||{}).dbTotal||0), backgroundColor:'rgba(26,107,74,.7)',  borderRadius:4},
+      {label:'Install Booked',data:labs.map(m=>(cgmGetData(cgm,m)||{}).inBooked||0),backgroundColor:'rgba(14,165,233,.5)', borderRadius:4},
+      {label:'Install Done',  data:labs.map(m=>(cgmGetData(cgm,m)||{}).inDone||0),  backgroundColor:'rgba(14,165,233,.9)', borderRadius:4},
+      {label:'Tickets',       data:labs.map(m=>(cgmGetData(cgm,m)||{}).tkTotal||0), backgroundColor:'rgba(245,158,11,.7)', borderRadius:4},
+      {label:'Replacements',  data:labs.map(m=>(cgmGetData(cgm,m)||{}).rpTotal||0), backgroundColor:'rgba(99,102,241,.7)', borderRadius:4},
     ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:10}}}},
       scales:{x:{ticks:{color:'#64748b'},stacked:false},y:{beginAtZero:true,ticks:{color:'#64748b'}}}}});
   }
@@ -3033,6 +3050,66 @@ function renderCGMModule(){
     if(cgmTab==='summary') initCGMSummaryCharts();
     else initCGMTabCharts(cgmTab);
   },50);
+}
+
+// ── Excel Download ──
+function cgmDownloadExcel(){
+  const checked=[...document.querySelectorAll('.cgm-dl-mo:checked')].map(el=>el.value);
+  if(!checked.length){alert('Please select at least one month.');return;}
+
+  const METRICS=[
+    {key:'dbTotal',      label:'Total patients on DB'},
+    {key:'inBooked',     label:'Booked for installation'},
+    {key:'inDone',       label:'Completed'},
+    {key:'tkTotal',      label:'Ticket received'},
+    {key:'tkClosed',     label:'Ticket closed'},
+    {key:'tkTech',       label:'Tech'},
+    {key:'avgTAT',       label:'Tech resolution TAT (hrs)'},
+    {key:'tkNonTech',    label:'Non tech'},
+    {key:'avgNonTechTAT',label:'Non tech resolution TAT (hrs)'},
+    {key:'rpTotal',      label:'Replacement'},
+    {key:'pctInstall',   label:'% installation overall'},
+    {key:'pctTicket',    label:'% ticket coverage'},
+    {key:'pctReplace',   label:'% Replacement'},
+  ];
+
+  // Build header row
+  const header=['Metric'];
+  const cgms=['goodflip','diasens'];
+  cgms.forEach(cgm=>{
+    checked.forEach(mo=>header.push(`${cgm==='goodflip'?'GoodFlip':'Diasens'} - ${mo}`));
+  });
+
+  // Build data rows
+  const rows=[header];
+  METRICS.forEach(metric=>{
+    const row=[metric.label];
+    cgms.forEach(cgm=>{
+      checked.forEach(mo=>{
+        const d=cgmGetData(cgm,mo)||{};
+        const v=d[metric.key]||0;
+        row.push(metric.key.startsWith('pct')?v+'%':(metric.key.includes('TAT')?v+'hrs':v));
+      });
+    });
+    rows.push(row);
+  });
+
+  // Use SheetJS to create Excel
+  try{
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    // Style header row width
+    ws['!cols']=header.map((_,i)=>({wch:i===0?30:18}));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,'CGM Report',ws);
+    XLSX.writeFile(wb,`CGM_Report_${checked.join('_')}.xlsx`);
+  }catch(e){
+    // Fallback CSV if SheetJS not available
+    const csv=rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+    a.download=`CGM_Report_${checked.join('_')}.csv`;
+    a.click();
+  }
 }
 
 // ── Load CGM Data ──
