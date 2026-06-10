@@ -2718,7 +2718,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     if(!d) d=cgmParseDate(r[14]||'');
     if(!d) return;
     const phones=cgmNormPhone(r[16]||'');
-    let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat)||tat<0||tat>720)tat=null;}catch(e){}
+    let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat))tat=null;}catch(e){}
     const cgmRaw=cgmSV(r[23]||'');
     tks.push({phone:phones[0]||'',cgm:cgmRaw==='Diasens'?'diasens':'goodflip',
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[6]||''),
@@ -3222,7 +3222,7 @@ function pe2ParseCSV(text){
 
 // ── Data Processor ──
 function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
-  // Coach lookup: name -> session counts
+  // ── Coach: name -> session counts ──
   const coachData={};
   coachRaw.slice(1).forEach(r=>{
     const n=pe2CleanName(r[1]||'');
@@ -3241,11 +3241,35 @@ function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
     else if(st==='P'||st==='H') coachData[n][`${key}_booked`]++;
   });
 
-  // DS booked: set of names
-  const dsBooked=new Set();
-  dsRaw.slice(1).forEach(r=>{ const n=pe2CleanName(r[21]||''); if(n) dsBooked.add(n); });
+  // ── LSQ: phone set (all = completed) + name->phone fallback ──
+  const lsqPhones=new Set();
+  const lsqNamePhone={};
+  lsqRaw.slice(1).forEach(r=>{
+    const ph=pe2NormPhone(r[2]||'');
+    const n=pe2CleanName(r[0]||'');
+    if(ph){ lsqPhones.add(ph); if(n) lsqNamePhone[n]=ph; }
+  });
 
-  // Dr done: names + phones
+  // ── DS: col[2]=phone, col[4]=status, col[0]=name ──
+  const dsBookedPhones=new Set();
+  const dsCompletedPhones=new Set();
+  const dsNameBooked=new Set();
+  const dsNameCompleted=new Set();
+  dsRaw.slice(1).forEach(r=>{
+    const ph=pe2NormPhone(r[2]||'');
+    const n=pe2CleanName(r[0]||'');
+    const st=(r[4]||'').toLowerCase();
+    if(ph){
+      dsBookedPhones.add(ph);
+      if(st==='completed') dsCompletedPhones.add(ph);
+    }
+    if(n){
+      dsNameBooked.add(n);
+      if(st==='completed') dsNameCompleted.add(n);
+    }
+  });
+
+  // ── Dr: name + phone -> done ──
   const drDoneNames=new Set(), drDonePhones=new Set();
   drRaw.slice(1).forEach(r=>{
     const n=pe2CleanName(r[3]||'');
@@ -3254,7 +3278,7 @@ function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
     if(st.includes('completed')){ if(n) drDoneNames.add(n); if(ph) drDonePhones.add(ph); }
   });
 
-  // Build patients from master
+  // ── Master: build patients ──
   const patients=[];
   masterRaw.slice(1).forEach(r=>{
     if(!r.some(c=>pe2SV(c))) return;
@@ -3272,12 +3296,21 @@ function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
     const am=pe2SV(r[13]||'');
     let ext=0; try{ext=+parseFloat(pe2SV(r[37]||'')||'0');}catch{}
     const drInPlan=(r[35]||'').toLowerCase()==='yes';
-    const wcStatusRaw=(r[31]||'').toLowerCase();
     const wcBookRaw=(r[36]||'').toLowerCase();
     const active=pe2IsActive(purchMo,dur,ext);
 
-    const wcDone = wcStatusRaw==='completed'||wcStatusRaw==='renewal';
-    const wcBooked = wcDone||wcBookRaw==='booked'||wcBookRaw==='completed'||dsBooked.has(cn);
+    // Recover phone from coach/lsq
+    const phCoach=(coachData[cn]||{}).phone||'';
+    const phLsq=lsqNamePhone[cn]||'';
+    const ph=phCoach||phLsq;
+
+    // Welcome: phone-first, name fallback
+    const wcDone=(ph&&(lsqPhones.has(ph)||dsCompletedPhones.has(ph)))||
+                 (!ph&&dsNameCompleted.has(cn));
+    const wcBooked=wcDone||
+                   (ph&&dsBookedPhones.has(ph))||
+                   (!ph&&dsNameBooked.has(cn))||
+                   wcBookRaw==='booked'||wcBookRaw==='completed';
 
     const cd=coachData[cn]||{};
     const dietDone=cd.diet_done>0, physioDone=cd.physio_done>0, cbtDone=cd.cbt_done>0;
@@ -3288,16 +3321,9 @@ function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
     const coachBooked=dietBooked||physioBooked||cbtBooked;
     const totalS=(cd.diet_done||0)+(cd.physio_done||0)+(cd.cbt_done||0)+
                  (cd.diet_booked||0)+(cd.physio_booked||0)+(cd.cbt_booked||0);
-    const phCoach=cd.phone||'';
-    const drDone=(drDoneNames.has(cn))||(phCoach&&drDonePhones.has(phCoach));
+    const drDone=(ph&&drDonePhones.has(ph))||(drDoneNames.has(cn));
 
-    // Score logic (0-5):
-    // +1 Welcome Call Completed
-    // +1 Diet Consultation Completed
-    // +1 Physio Consultation Completed
-    // +1 CBT/Wellness Consultation Completed
-    // +1 Doctor Consultation Completed (only if Dr is in plan)
-    // Max = 5 for patients with Dr in plan, 4 for others
+    // Score: +1 each for welcome, diet, physio, cbt, dr(if in plan)
     let score=0;
     if(wcDone) score++;
     if(dietDone) score++;
@@ -3305,9 +3331,8 @@ function pe2Process(masterRaw,lsqRaw,dsRaw,coachRaw,drRaw){
     if(cbtDone) score++;
     if(drInPlan&&drDone) score++;
 
-    patients.push({name,cn,phone:phCoach,state:pe2SV(r[4]||''),team,plan,condition,
-      dur,ext,purchMo,bdm,am,drInPlan,active,
-      wcDone,wcBooked,dietDone,dietBooked,physioDone,physioBooked,
+    patients.push({name,cn,phone:ph,team,plan,condition,dur,ext,purchMo,bdm,am,
+      drInPlan,active,wcDone,wcBooked,dietDone,dietBooked,physioDone,physioBooked,
       cbtDone,cbtBooked,coachDone,coachBooked,drDone,score,totalSessions:totalS});
   });
 
@@ -3417,7 +3442,7 @@ function buildPE2Overview(){
     ${pe2KPI('Welcome Done',s.pctWcDone+'%',`${s.wcDone} of ${s.total}`,'#059669')}
     ${pe2KPI('Coach Done',s.pctCoachDone+'%',`${s.coachDone} of ${s.total}`,'#7c3aed')}
     ${pe2KPI('Dr Consult',s.pctDrDone+'%',`${s.drDone} of ${s.drInPlan} in-plan`,'#d97706')}
-    ${pe2KPI('Zero Engaged',s.zeroEng,`${s.pctZeroEng}% of active — P0 recovery target`,'#dc2626')}
+    ${pe2KPI('Zero Engaged (Active)',s.zeroEng,`${s.pctZeroEng}% of ${s.active} active patients · score = 0`,'#dc2626')}
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px">
@@ -3425,7 +3450,7 @@ function buildPE2Overview(){
       <canvas id="pe2_coach_bar" height="200"></canvas>
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px">
-      <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:12px">Engagement Score Distribution</div>
+      <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:12px">Score Distribution — All Patients</div>
       <canvas id="pe2_score_dist" height="200"></canvas>
     </div>
   </div>`;
@@ -3436,8 +3461,9 @@ function initPE2OverviewCharts(){
   const s=pe2Stats(pts); if(!s) return;
   const total=s.total;
   
+  dc('pe2_coach_bar');
   const bEl=document.getElementById('pe2_coach_bar');
-  if(bEl) new Chart(bEl,{type:'bar',data:{
+  if(bEl) CI['pe2_coach_bar']=new Chart(bEl,{type:'bar',data:{
     labels:['Welcome Done','Diet Done','Physio Done','CBT Done','Dr Done (in-plan)'],
     datasets:[{
       data:[s.wcDone,s.dietDone,s.physioDone,s.cbtDone,s.drDone],
@@ -3448,10 +3474,11 @@ function initPE2OverviewCharts(){
     tooltip:{callbacks:{label:ctx=>`${ctx.parsed.x} patients (${Math.round(ctx.parsed.x/total*100)}%)`}}},
     scales:{x:{beginAtZero:true,max:total,ticks:{color:'#64748b'}},y:{ticks:{color:'#64748b',font:{size:11}}}}}});
 
+  dc('pe2_score_dist');
   const sEl=document.getElementById('pe2_score_dist');
   if(sEl){
     const scoreDist=[0,1,2,3,4,5].map(sc=>pts.filter(p=>p.score===sc).length);
-    new Chart(sEl,{type:'bar',data:{
+    CI['pe2_score_dist']=new Chart(sEl,{type:'bar',data:{
       labels:['0 — Zero','1','2','3','4','5 — Full'],
       datasets:[{data:scoreDist,backgroundColor:['#dc2626','#ea580c','#d97706','#0891b2','#2563eb','#059669'],borderRadius:6}]
     },options:{responsive:true,plugins:{legend:{display:false}},
@@ -3464,30 +3491,51 @@ function buildPE2Funnel(){
   const pts=pe2Pts();
   const s=pe2Stats(pts); if(!s) return '';
   const total=s.total;
+  const allPts=pe2Data?pe2Data.patients:[];
+  const allTotal=allPts.length||1;
+
+  // Compute average baseline from all months
+  const avgWcBooked  =Math.round(allPts.filter(p=>p.wcBooked).length/allTotal*100);
+  const avgWcDone    =Math.round(allPts.filter(p=>p.wcDone).length/allTotal*100);
+  const avgCoachBooked=Math.round(allPts.filter(p=>p.coachBooked).length/allTotal*100);
+  const avgCoachDone =Math.round(allPts.filter(p=>p.coachDone).length/allTotal*100);
+  const avgDrPts     =allPts.filter(p=>p.drInPlan);
+  const avgDrDone    =avgDrPts.length?Math.round(avgDrPts.filter(p=>p.drDone).length/avgDrPts.length*100):0;
+
   const steps=[
-    {label:'Enrolled',n:total,pct:100,color:'#2563eb'},
-    {label:'Welcome Booked',n:s.wcBooked,pct:s.pctWcBooked,color:'#059669'},
-    {label:'Welcome Completed',n:s.wcDone,pct:s.pctWcDone,color:'#059669'},
-    {label:'Coach Booked',n:s.coachBooked,pct:Math.round(s.coachBooked/total*100),color:'#7c3aed'},
-    {label:'Coach Done',n:s.coachDone,pct:s.pctCoachDone,color:'#7c3aed'},
-    {label:'Dr Consult Done*',n:s.drDone,pct:s.pctDrDone,color:'#d97706'},
+    {label:'Enrolled',       n:total,       pct:100,              avg:100,           color:'#2563eb'},
+    {label:'Welcome Booked', n:s.wcBooked,  pct:s.pctWcBooked,   avg:avgWcBooked,   color:'#059669'},
+    {label:'Welcome Completed',n:s.wcDone,  pct:s.pctWcDone,     avg:avgWcDone,     color:'#059669'},
+    {label:'Coach Booked',   n:s.coachBooked,pct:Math.round(s.coachBooked/total*100),avg:avgCoachBooked,color:'#7c3aed'},
+    {label:'Coach Done',     n:s.coachDone, pct:s.pctCoachDone,  avg:avgCoachDone,  color:'#7c3aed'},
+    {label:'Dr Consult Done*',n:s.drDone,   pct:s.pctDrDone,     avg:avgDrDone,     color:'#d97706'},
   ];
+
+  const isFiltered=!!pe2MoFilter;
   return `
   ${pe2FilterBar()}
-  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">* Dr Consult: ${s.drDone} of ${s.drInPlan} in-plan patients (${s.pctDrDone}%)</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+    * Dr Consult: ${s.drDone} of ${s.drInPlan} in-plan patients (${s.pctDrDone}%)
+    ${isFiltered?` &nbsp;·&nbsp; <span style="color:#6366f1">Δ vs program avg shown on right</span>`:''}
+  </div>
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px">
-    ${steps.map((step,i)=>{
-      const dropoff = i>0?steps[i-1].n-step.n:0;
-      const dropPct = i>0?Math.round(dropoff/steps[i-1].n*100):0;
+    ${steps.map(step=>{
+      const delta=step.pct-step.avg;
+      const deltaStr=delta===0?'= avg':(delta>0?`▲ +${delta}% vs avg`:`▼ ${delta}% vs avg`);
+      const deltaColor=delta>0?'#059669':delta<0?'#dc2626':'#94a3b8';
       return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
         <div style="width:180px;font-size:13px;font-weight:500;text-align:right;color:var(--muted);flex-shrink:0">${step.label}</div>
-        <div style="flex:1;height:36px;background:var(--surface2);border-radius:6px;overflow:hidden">
+        <div style="flex:1;height:36px;background:var(--surface2);border-radius:6px;overflow:hidden;position:relative">
           <div style="height:100%;width:${step.pct}%;background:${step.color};border-radius:6px;display:flex;align-items:center;padding-left:12px;font-size:12px;font-weight:700;color:#fff;min-width:40px">${step.n.toLocaleString()}</div>
+          ${isFiltered&&step.avg<100?`<div style="position:absolute;top:0;bottom:0;left:${step.avg}%;width:2px;background:rgba(0,0,0,.25);z-index:2" title="Program avg: ${step.avg}%"></div>`:''}
         </div>
-        <div style="width:60px;text-align:right;font-size:13px;font-weight:600;color:var(--text)">${step.pct}%</div>
-        ${i>0&&dropoff>0?`<div style="width:80px;font-size:11px;color:#dc2626;flex-shrink:0">▼ ${dropPct}% drop</div>`:'<div style="width:80px"></div>'}
+        <div style="width:48px;text-align:right;font-size:13px;font-weight:600;color:var(--text)">${step.pct}%</div>
+        <div style="width:120px;font-size:11px;font-weight:600;color:${deltaColor};flex-shrink:0">${isFiltered?deltaStr:`avg: ${step.avg}%`}</div>
       </div>`;
     }).join('')}
+    ${!isFiltered?`<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)">
+      Showing program averages. Select a month filter above to compare that month vs average.
+    </div>`:''}
   </div>`;
 }
 
@@ -3537,6 +3585,7 @@ function buildPE2ISvField(){
 function initPE2ISvFieldChart(){
   const allPts=pe2Data?pe2Data.patients:[];
   const months=pe2Data?pe2Data.months:[];
+  dc('pe2_isvfield_chart');
   const el=document.getElementById('pe2_isvfield_chart'); if(!el) return;
   const isData=months.map(m=>{
     const pts=allPts.filter(p=>p.purchMo===m&&p.team==='IS');
@@ -3546,7 +3595,7 @@ function initPE2ISvFieldChart(){
     const pts=allPts.filter(p=>p.purchMo===m&&p.team==='Field');
     return pts.length?Math.round(pts.filter(p=>p.coachDone).length/pts.length*100):0;
   });
-  new Chart(el,{type:'line',data:{labels:months,datasets:[
+  CI['pe2_isvfield_chart']=new Chart(el,{type:'line',data:{labels:months,datasets:[
     {label:'Inside Sales',data:isData,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.06)',tension:.3,fill:true,borderWidth:3},
     {label:'Field',data:fiData,borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.06)',tension:.3,fill:true,borderWidth:3},
   ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:11}}}},
@@ -3578,34 +3627,38 @@ function initPE2MonthlyCharts(){
   const allPts=pe2Data.patients;
   const months=pe2Data.months;
 
+  dc('pe2_monthly_trend');
   const tEl=document.getElementById('pe2_monthly_trend');
-  if(tEl){
+  if(tEl){ CI['pe2_monthly_trend']=
     const wcD=months.map(m=>{const p=allPts.filter(x=>x.purchMo===m);return p.length?Math.round(p.filter(x=>x.wcDone).length/p.length*100):0;});
     const coachD=months.map(m=>{const p=allPts.filter(x=>x.purchMo===m);return p.length?Math.round(p.filter(x=>x.coachDone).length/p.length*100):0;});
-    new Chart(tEl,{type:'line',data:{labels:months,datasets:[
+CI['pe2_monthly_trend']=new Chart(tEl,{type:'line',data:{labels:months,datasets:[
       {label:'Welcome Done %',data:wcD,borderColor:'#059669',backgroundColor:'rgba(5,150,105,.06)',tension:.3,fill:true,borderWidth:2},
       {label:'Coach Done %',data:coachD,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.06)',tension:.3,fill:true,borderWidth:2},
     ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:11}}}},
       scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',color:'#64748b'}},x:{ticks:{color:'#64748b'}}}}});
   }
 
+  dc('pe2_enrolled_bar');
+  dc('pe2_enrolled_bar');
   const eEl=document.getElementById('pe2_enrolled_bar');
   if(eEl){
     const enrolled=months.map(m=>allPts.filter(x=>x.purchMo===m).length);
-    new Chart(eEl,{type:'bar',data:{labels:months,datasets:[
+    CI['pe2_enrolled_bar']=new Chart(eEl,{type:'bar',data:{labels:months,datasets:[
       {label:'IS',data:months.map(m=>allPts.filter(x=>x.purchMo===m&&x.team==='IS').length),backgroundColor:'rgba(37,99,235,.7)',borderRadius:4},
       {label:'Field',data:months.map(m=>allPts.filter(x=>x.purchMo===m&&x.team==='Field').length),backgroundColor:'rgba(220,38,38,.6)',borderRadius:4},
     ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:10}}}},
       scales:{x:{stacked:true,ticks:{color:'#64748b'}},y:{stacked:true,beginAtZero:true,ticks:{color:'#64748b'}}}}});
   }
 
+  dc('pe2_zero_bar');
   const zEl=document.getElementById('pe2_zero_bar');
-  if(zEl){
+  if(zEl){ CI['pe2_zero_bar']=
     const zeroD=months.map(m=>{
       const active=allPts.filter(x=>x.purchMo===m&&x.active);
       return active.length?Math.round(active.filter(x=>x.score===0).length/active.length*100):0;
     });
-    new Chart(zEl,{type:'bar',data:{labels:months,datasets:[
+CI['pe2_zero_bar']=new Chart(zEl,{type:'bar',data:{labels:months,datasets:[
       {label:'Zero Engagement %',data:zeroD,backgroundColor:'rgba(220,38,38,.6)',borderRadius:4},
     ]},options:{responsive:true,plugins:{legend:{display:false}},
       scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',color:'#64748b'}},x:{ticks:{color:'#64748b'}}}}});
@@ -3755,7 +3808,8 @@ function renderPE2(){
 
 // ── Load PE2 Data ──
 async function loadPE2Data(){
-  if(pe2Loading||pe2Data) return;
+  if(pe2Data){renderPE2();return;}
+  if(pe2Loading) return;
   pe2Loading=true;
   renderPE2();
   try{
