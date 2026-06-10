@@ -3629,7 +3629,7 @@ function initPE2MonthlyCharts(){
 
   dc('pe2_monthly_trend');
   const tEl=document.getElementById('pe2_monthly_trend');
-  if(tEl){ CI['pe2_monthly_trend']=
+  if(tEl){
     const wcD=months.map(m=>{const p=allPts.filter(x=>x.purchMo===m);return p.length?Math.round(p.filter(x=>x.wcDone).length/p.length*100):0;});
     const coachD=months.map(m=>{const p=allPts.filter(x=>x.purchMo===m);return p.length?Math.round(p.filter(x=>x.coachDone).length/p.length*100):0;});
 CI['pe2_monthly_trend']=new Chart(tEl,{type:'line',data:{labels:months,datasets:[
@@ -3653,7 +3653,7 @@ CI['pe2_monthly_trend']=new Chart(tEl,{type:'line',data:{labels:months,datasets:
 
   dc('pe2_zero_bar');
   const zEl=document.getElementById('pe2_zero_bar');
-  if(zEl){ CI['pe2_zero_bar']=
+  if(zEl){
     const zeroD=months.map(m=>{
       const active=allPts.filter(x=>x.purchMo===m&&x.active);
       return active.length?Math.round(active.filter(x=>x.score===0).length/active.length*100):0;
