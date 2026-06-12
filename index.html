@@ -2701,13 +2701,14 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[7]||''),name:cgmSV(r[0]||'')});
   });
 
-  // Install: col[4]=start_at, col[8]=status, col[23]=phone, col[39]=cgm
+  // Install: col[6]=start_at, col[4]=status, col[2]=phone, col[7]=cgm type
   inRaw.slice(1).forEach(r=>{
-    const d=cgmParseDate(r[4]||''); if(!d) return;
-    const phones=cgmNormPhone(r[23]||'');
-    const cgmRaw=(r[39]||'').toLowerCase();
+    const d=cgmParseDate(r[6]||''); if(!d) return;
+    const phones=cgmNormPhone(r[2]||'');
+    const cgmRaw=(r[7]||'').toLowerCase();
     ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
-      y:d.y,mo:d.mo,label:d.label,status:(r[8]||'').toLowerCase()});
+      y:d.y,mo:d.mo,label:d.label,status:(r[4]||'').toLowerCase()});
+  });
   });
 
   // Tickets: col[7]=date(MM-DD-YYYY), col[4]=level2, col[6]=status, col[10]=TAT,
