@@ -668,7 +668,7 @@ function renderPEC(){
     else if(peView==='monthly')initPEMo(peTeam);
     else if(peView==='cohort')initPECohort(peTeam);
     else if(peView==='coach')initPECoach(peTeam);
-  },40);
+  },100);
 }
 function mbar(label,val,total,color='var(--brand)'){
   const p=pct(val,total);
@@ -804,8 +804,9 @@ function buildPECohort(team){
     <tbody>${cohortRows(base.plan_duration,durs)}</tbody></table></div></div>`;
 }
 function initPECohort(team){
-  if(peMonth)return;
-  const base=PED[team];if(!base)return;
+if(peMonth)return;
+  dc('pe_cond_bar');
+  dc('pe_dur_bar');  const base=PED[team];if(!base)return;
   const conds=PED.conditions,durs=PED.plan_durations;
   try{bar('pe_cond_bar',conds,[
     {label:'Patients',data:conds.map(c=>base.condition[c]?.total||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4},
