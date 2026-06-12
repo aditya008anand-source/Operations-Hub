@@ -2709,7 +2709,6 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
       y:d.y,mo:d.mo,label:d.label,status:(r[4]||'').toLowerCase()});
   });
-  });
 
   // Tickets: col[7]=date(MM-DD-YYYY), col[4]=level2, col[6]=status, col[10]=TAT,
   //          col[16]=phone, col[23]=cgm_type, col[19]=resolution
