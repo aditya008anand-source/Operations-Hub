@@ -668,7 +668,7 @@ function renderPEC(){
     else if(peView==='monthly')initPEMo(peTeam);
     else if(peView==='cohort')initPECohort(peTeam);
     else if(peView==='coach')initPECoach(peTeam);
-  },100);
+  },40);
 }
 function mbar(label,val,total,color='var(--brand)'){
   const p=pct(val,total);
@@ -777,39 +777,39 @@ function initPEMo(team){
 }
 function buildPECohort(team){
   const base=PED[team];if(!base)return'';
-  const conds=PED.conditions,durs=PED.plan_durations;
-  function cohortRows(dataObj,keys){
+  const condObj=base.conditions||{};
+  const durObj=base.plan_durations||{};
+  const teamTotal=(base.overall&&base.overall.total)||Object.values(condObj).reduce((a,b)=>a+b,0)||0;
+  const condKeys=Object.keys(condObj);
+  const durKeys=Object.keys(durObj).sort((a,b)=>(+a)-(+b));
+  function rows(obj,keys,fmt){
     return keys.map(k=>{
-      const d=dataObj[k];if(!d||!d.total)return'';
-      const n=d.total;
-      return`<tr><td>${k}</td><td>${n}</td>
-        <td class="ci">${d.wcb} <span class="cn">(${pct(d.wcb,n)}%)</span></td>
-        <td class="cs">${d.wcc} <span class="cn">(${pct(d.wcc,n)}%)</span></td>
-        <td>${d.nutri}</td><td>${d.physio}</td><td>${d.phyco}</td><td>${d.all3}</td><td>${d.any1}</td></tr>`;
+      const n=obj[k]||0;if(!n)return'';
+      return`<tr><td>${fmt?fmt(k):k}</td><td>${n}</td><td class=\"cn\">${pct(n,teamTotal)}%</td></tr>`;
     }).join('');
   }
   return `
-  <div class="page-header"><div class="page-title">🔬 Cohort — ${team}</div></div>
+  <div class=\"page-header\"><div class=\"page-title\">🔬 Cohort — ${team}</div><div class=\"page-sub\">${teamTotal} patients · distribution by condition & plan duration</div></div>
   ${peMonthSelect()}
-  ${peMonth?`<div class="alert"><span class="alert-icon">ℹ️</span><div>Cohort data shown is based on overall groupings. Month filter applies to total count above.</div></div>`:''}
-  ${!peMonth?`<div class="cg cg2" style="margin-bottom:20px">
-    <div class="cc"><div class="cc-hdr"><div class="cc-title">Condition Cohort</div></div><div class="cw h200"><canvas id="pe_cond_bar"></canvas></div></div>
-    <div class="cc"><div class="cc-hdr"><div class="cc-title">Plan Duration Cohort</div></div><div class="cw h200"><canvas id="pe_dur_bar"></canvas></div></div>
-  </div>`:''}
-  <div class="section"><div class="sec-hdr"><div class="sec-title">Condition-wise Detail</div></div>
-    <div class="tw"><table><thead><tr><th>Condition</th><th>Patients</th><th>WCB (%)</th><th>WCC (%)</th><th>Nutri</th><th>Physio</th><th>CBT</th><th>All 3</th><th>Any 1</th></tr></thead>
-    <tbody>${cohortRows(base.condition,conds)}</tbody></table></div></div>
-  <div class="section"><div class="sec-hdr"><div class="sec-title">Plan Duration-wise Detail</div></div>
-    <div class="tw"><table><thead><tr><th>Duration (mo)</th><th>Patients</th><th>WCB (%)</th><th>WCC (%)</th><th>Nutri</th><th>Physio</th><th>CBT</th><th>All 3</th><th>Any 1</th></tr></thead>
-    <tbody>${cohortRows(base.plan_duration,durs)}</tbody></table></div></div>`;
+  ${peMonth?`<div class=\"alert\"><span class=\"alert-icon\">ℹ️</span><div>Cohort distribution is based on overall groupings (not month-filtered).</div></div>`:''}
+  <div class=\"cg cg2\" style=\"margin-bottom:20px\">
+    <div class=\"cc\"><div class=\"cc-hdr\"><div class=\"cc-title\">Condition Distribution</div></div><div class=\"cw h200\"><canvas id=\"pe_cond_bar\"></canvas></div></div>
+    <div class=\"cc\"><div class=\"cc-hdr\"><div class=\"cc-title\">Plan Duration Distribution</div></div><div class=\"cw h200\"><canvas id=\"pe_dur_bar\"></canvas></div></div>
+  </div>
+  <div class=\"section\"><div class=\"sec-hdr\"><div class=\"sec-title\">Condition-wise Detail</div></div>
+    <div class=\"tw\"><table><thead><tr><th>Condition</th><th>Patients</th><th>% of Team</th></tr></thead>
+    <tbody>${rows(condObj,condKeys)}</tbody></table></div></div>
+  <div class=\"section\"><div class=\"sec-hdr\"><div class=\"sec-title\">Plan Duration-wise Detail</div></div>
+    <div class=\"tw\"><table><thead><tr><th>Duration</th><th>Patients</th><th>% of Team</th></tr></thead>
+    <tbody>${rows(durObj,durKeys,d=>d+' mo')}</tbody></table></div></div>`;
 }
 function initPECohort(team){
   if(peMonth)return;
   const base=PED[team];if(!base)return;
-  const durObj=base.plan_durations||{};
   const condObj=base.conditions||{};
-  const durKeys=Object.keys(durObj).sort((a,b)=>+a-+b);
+  const durObj=base.plan_durations||{};
   const condKeys=Object.keys(condObj);
+  const durKeys=Object.keys(durObj).sort((a,b)=>(+a)-(+b));
   try{bar('pe_cond_bar',condKeys,[
     {label:'Patients',data:condKeys.map(c=>condObj[c]||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4}
   ]);}catch(e){}
@@ -2717,7 +2717,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     if(!d) d=cgmParseDate(r[14]||'');
     if(!d) return;
     const phones=cgmNormPhone(r[16]||'');
-    let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat))tat=null;}catch(e){}
+    let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat)||tat<0)tat=null;}catch(e){}
     const cgmRaw=cgmSV(r[23]||'');
     tks.push({phone:phones[0]||'',cgm:cgmRaw==='Diasens'?'diasens':'goodflip',
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[6]||''),
