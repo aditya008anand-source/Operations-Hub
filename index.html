@@ -804,19 +804,17 @@ function buildPECohort(team){
     <tbody>${cohortRows(base.plan_duration,durs)}</tbody></table></div></div>`;
 }
 function initPECohort(team){
-if(peMonth)return;
-  dc('pe_cond_bar');
-  dc('pe_dur_bar');  const base=PED[team];if(!base)return;
-  const conds=PED.conditions,durs=PED.plan_durations;
-  try{bar('pe_cond_bar',conds,[
-    {label:'Patients',data:conds.map(c=>base.condition[c]?.total||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4},
-    {label:'WC Done',data:conds.map(c=>base.condition[c]?.wcc||0),backgroundColor:'rgba(14,165,233,.7)',borderRadius:4},
-    {label:'Coach Any',data:conds.map(c=>base.condition[c]?.any1||0),backgroundColor:'rgba(168,85,247,.7)',borderRadius:4}
+  if(peMonth)return;
+  const base=PED[team];if(!base)return;
+  const durObj=base.plan_durations||{};
+  const condObj=base.conditions||{};
+  const durKeys=Object.keys(durObj).sort((a,b)=>+a-+b);
+  const condKeys=Object.keys(condObj);
+  try{bar('pe_cond_bar',condKeys,[
+    {label:'Patients',data:condKeys.map(c=>condObj[c]||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4}
   ]);}catch(e){}
-  try{bar('pe_dur_bar',durs.map(d=>d+' mo'),[
-    {label:'Patients',data:durs.map(d=>base.plan_duration[d]?.total||0),backgroundColor:'rgba(26,107,74,.7)',borderRadius:4},
-    {label:'WC Done',data:durs.map(d=>base.plan_duration[d]?.wcc||0),backgroundColor:'rgba(14,165,233,.7)',borderRadius:4},
-    {label:'Coach Any',data:durs.map(d=>base.plan_duration[d]?.any1||0),backgroundColor:'rgba(168,85,247,.7)',borderRadius:4}
+  try{bar('pe_dur_bar',durKeys.map(d=>d+' mo'),[
+    {label:'Patients',data:durKeys.map(d=>durObj[d]||0),backgroundColor:'rgba(14,165,233,.7)',borderRadius:4}
   ]);}catch(e){}
 }
 function buildPECoach(team){
