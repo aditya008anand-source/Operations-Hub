@@ -1484,7 +1484,9 @@ function liveProcessDiag(diagRaw) {
       inv, mo:parseMo(liveSV(r[16]||'')), team, otype:liveSV(r[18]||''), am,
       is_regular: inv>0,
       is_careplan: gf && inv===0,
-      is_cancelled: !gf && inv===0
+      is_cancelled: !gf && inv===0,
+      _testName:liveSV(r[10]||''), _testType:liveSV(r[11]||''),
+      _label:parseMo(liveSV(r[16]||'')), _team:liveSV(r[17]||''), _otype:liveSV(r[18]||''), _am:normAM(liveSV(r[17]||''),liveSV(r[20]||''))
     };
   });
 
@@ -1539,7 +1541,7 @@ function liveProcessDiag(diagRaw) {
     });
   });
 
-  return{lookup,months:ALL_MO,teams:ALL_TEAMS,otypes:ALL_OTYPES,testTypes:ALL_TT,partners:ALL_PART,team_am:TEAM_AM,monthly_trend};
+  return{lookup,months:ALL_MO,teams:ALL_TEAMS,otypes:ALL_OTYPES,testTypes:ALL_TT,partners:ALL_PART,team_am:TEAM_AM,monthly_trend,_raw:parsed};
 }
 
 // ── Main Refresh Function ──
@@ -1917,6 +1919,108 @@ function fmtNum(n){ return Math.round(n).toLocaleString('en-IN'); }
 // ══════════════════════════════════
 //  MANAGEMENT VIEW
 // ══════════════════════════════════
+// ── Diagnostics: Top Tests & Packages ──
+const DIAG_TEST_ALIASES=[
+  [['cbc','complete blood count'],'CBC'],
+  [['hba1c','glycosylated hemoglobin'],'HbA1c'],
+  [['lipid profile'],'Lipid Profile'],
+  [['glucose post prandial','ppbs','post prandial'],'Glucose PPBS'],
+  [['glucose fasting','blood sugar glucose - fasting'],'Glucose Fasting'],
+  [['creatinine'],'Creatinine'],
+  [['liver function','lft'],'LFT'],
+  [['kidney function','kft'],'KFT'],
+  [['thyroid profile','tsh'],'Thyroid Profile'],
+  [['vitamin b12'],'Vitamin B12'],
+  [['vitamin d','25 hydroxy'],'Vitamin D'],
+  [['uric acid'],'Uric Acid'],
+  [['urine routine','urine r/m'],'Urine Routine'],
+  [['sgpt','alt test'],'SGPT/ALT'],
+  [['sgot','ast test'],'SGOT/AST'],
+  [['ferritin'],'Ferritin'],
+  [['iron studies'],'Iron Studies'],
+  [['haemoglobin','hemoglobin'],'Hemoglobin'],
+  [['blood group'],'Blood Group'],
+  [['dengue'],'Dengue'],
+  [['malaria'],'Malaria'],
+  [['esr'],'ESR'],
+  [['crp','c reactive'],'CRP'],
+  [['prolactin'],'Prolactin'],
+  [['testosterone'],'Testosterone'],
+  [['psa'],'PSA'],
+  [['x-ray','xray','chest x'],'X-Ray'],
+  [['ultrasound','usg','sonography'],'Ultrasound'],
+];
+const DIAG_PKG_ALIASES=[
+  [['comprehensive health check','comprehensive pro','comp health'],'Comprehensive Health Check'],
+  [['comprehensive full body','tatva comprehensive'],'Comprehensive Full Body'],
+  [['advanced full body','tatva advanced full'],'Advanced Full Body'],
+  [['diabetes profile','diabetes package'],'Diabetes Profile'],
+  [['weight loss profile','weight loss package'],'Weight Loss Profile'],
+  [['essential health check','essential full body','essential health'],'Essential Health Check'],
+  [['smart full body','smart full health'],'Smart Full Body'],
+  [['smart pro'],'Smart Pro Package'],
+  [['thyroid and vitamin','thyroid vitamin'],'Thyroid & Vitamin Screening'],
+  [['fever package','fever profile','fever plus'],'Fever Package'],
+  [['hairfall','hair fall','hair transplant'],'Hair Package'],
+  [['viral marker'],'Viral Marker Package'],
+  [['pcos','polycystic ovary'],'PCOS Profile'],
+  [['obesity'],'Obesity Package'],
+  [['fatty liver'],'Fatty Liver Profile'],
+  [['bandhan'],'Bandhan Package'],
+  [['hormone profile','hormone optimization'],'Hormone Profile'],
+  [['infertility'],'Infertility Package'],
+  [['full body health checkup','full body health check'],'Full Body Health Checkup'],
+  [['pre diabetic','pre-diabetic'],'Pre-Diabetic Profile'],
+  [['allergy panel','allergy basic'],'Allergy Panel'],
+  [['rheumatic'],'Rheumatic Profile'],
+  [['kidney checkup','ckd package'],'Kidney Package'],
+  [['sema package'],'Sema Package'],
+  [['pre-op','preop'],'Pre-Op Package'],
+];
+function diagResolve(name,aliases){
+  const nl=name.toLowerCase();
+  for(const [keys,canonical] of aliases){ if(keys.some(k=>nl.includes(k))) return canonical; }
+  return name.trim();
+}
+function diagTopItems(mo,team,otype,am){
+  // Build package name set from pure Package rows
+  const pkgNameSet=new Set();
+  (DIAG._raw||[]).forEach(r=>{
+    if((r[11]||'').trim()==='Package'){
+      (r[10]||'').split(',').forEach(x=>{ x=x.trim(); if(x.length>2) pkgNameSet.add(x.toLowerCase()); });
+    }
+  });
+  const testCnt={}, pkgCnt={};
+  (DIAG._raw||[]).forEach(r=>{
+    // Apply filters
+    const rMo  =(r._label||'');
+    const rTeam=(r[17]||'').trim();
+    const rOtype=(r[18]||'').trim();
+    const rAM  =(r[20]||'').trim();
+    if(mo    && rMo!==mo)    return;
+    if(team  && rTeam!==team) return;
+    if(otype && rOtype!==otype) return;
+    if(am    && rAM!==am)    return;
+    const col_k=r[10]||'';
+    const col_l=(r[11]||'').trim();
+    const items=col_k.split(',').map(x=>x.trim()).filter(x=>x.length>2);
+    if(col_l==='Tests'||col_l==='Radiology Test'){
+      items.forEach(item=>{ const k=diagResolve(item,DIAG_TEST_ALIASES); testCnt[k]=(testCnt[k]||0)+1; });
+    } else if(col_l==='Package'){
+      items.forEach(item=>{ const k=diagResolve(item,DIAG_PKG_ALIASES); pkgCnt[k]=(pkgCnt[k]||0)+1; });
+    } else if(col_l==='Package+individual'){
+      for(const item of items){
+        if(pkgNameSet.has(item.toLowerCase())){
+          const k=diagResolve(item,DIAG_PKG_ALIASES); pkgCnt[k]=(pkgCnt[k]||0)+1; break;
+        }
+      }
+    }
+  });
+  const topTests=Object.entries(testCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const topPkgs =Object.entries(pkgCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  return {topTests,topPkgs};
+}
+
 function buildDiagMgmt(){
   const d = diagGet(diagMo, diagTeam, diagOtype, diagAM);
   const tot = diagGet('','','','');  // grand total for % calc
@@ -2038,7 +2142,48 @@ function buildDiagMgmt(){
         <td>${fmtINR(avgRev)}</td>
       </tr></tfoot>
     </table></div>
-  </div>`;
+  </div>
+
+  <!-- Top Tests & Packages -->
+  ${(()=>{
+    const raw=DIAG._raw||[];
+    if(!raw.length) return '';
+    const pkgSet=new Set();
+    raw.forEach(r=>{ if(r._testType==='Package'){ r._testName.split(',').forEach(x=>{x=x.trim();if(x.length>2)pkgSet.add(x.toLowerCase());}); } });
+    const testCnt={}, pkgCnt={};
+    raw.forEach(r=>{
+      if(diagMo&&r._label!==diagMo) return;
+      if(diagTeam&&r._team!==diagTeam) return;
+      if(diagOtype&&r._otype!==diagOtype) return;
+      if(diagAM&&r._am!==diagAM) return;
+      const items=r._testName.split(',').map(x=>x.trim()).filter(x=>x.length>2);
+      const tt=r._testType;
+      if(tt==='Tests'||tt==='Radiology Test'){
+        items.forEach(item=>{const k=diagResolve(item,DIAG_TEST_ALIASES);testCnt[k]=(testCnt[k]||0)+1;});
+      } else if(tt==='Package'){
+        items.forEach(item=>{const k=diagResolve(item,DIAG_PKG_ALIASES);pkgCnt[k]=(pkgCnt[k]||0)+1;});
+      } else if(tt==='Package+individual'){
+        for(const item of items){ if(pkgSet.has(item.toLowerCase())){const k=diagResolve(item,DIAG_PKG_ALIASES);pkgCnt[k]=(pkgCnt[k]||0)+1;break;} }
+      }
+    });
+    const topTests=Object.entries(testCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const topPkgs =Object.entries(pkgCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const maxT=topTests[0]?.[1]||1, maxP=topPkgs[0]?.[1]||1;
+    function rowHtml(name,cnt,max,color){
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">'
+        +'<div style="width:160px;font-size:12px;color:var(--text);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+name+'">'+name+'</div>'
+        +'<div style="flex:1;height:22px;background:var(--surface2);border-radius:4px;overflow:hidden">'
+        +'<div style="height:100%;width:'+Math.round(cnt/max*100)+'%;background:'+color+';border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:11px;font-weight:700;color:#fff;min-width:28px">'+cnt+'</div>'
+        +'</div></div>';
+    }
+    const testRows=topTests.map(([n,c])=>rowHtml(n,c,maxT,'#2563eb')).join('')||'<div style="color:var(--muted);font-size:13px">No test data for this filter</div>';
+    const pkgRows =topPkgs.map(([n,c])=>rowHtml(n,c,maxP,'#7c3aed')).join('')||'<div style="color:var(--muted);font-size:13px">No package data for this filter</div>';
+    return '<div class="cg cg2" style="margin-top:20px">'
+      +'<div class="cc"><div class="cc-hdr"><div class="cc-title">🔬 Top 10 Tests (by bookings)</div></div><div style="padding:16px">'+testRows+'</div></div>'
+      +'<div class="cc"><div class="cc-hdr"><div class="cc-title">📦 Top 10 Packages (by bookings)</div></div><div style="padding:16px">'+pkgRows+'</div></div>'
+      +'</div>';
+  })()}
+  `;
 }
 
 function initDiagMgmt(){
@@ -2701,13 +2846,13 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[7]||''),name:cgmSV(r[0]||'')});
   });
 
-  // Install: col[6]=start_at, col[4]=status, col[2]=phone, col[7]=cgm type
+  // Install: col[4]=start_at, col[8]=status, col[23]=phone, col[39]=cgm
   inRaw.slice(1).forEach(r=>{
-    const d=cgmParseDate(r[6]||''); if(!d) return;
-    const phones=cgmNormPhone(r[2]||'');
-    const cgmRaw=(r[7]||'').toLowerCase();
+    const d=cgmParseDate(r[4]||''); if(!d) return;
+    const phones=cgmNormPhone(r[23]||'');
+    const cgmRaw=(r[39]||'').toLowerCase();
     ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
-      y:d.y,mo:d.mo,label:d.label,status:(r[4]||'').toLowerCase()});
+      y:d.y,mo:d.mo,label:d.label,status:(r[8]||'').toLowerCase()});
   });
 
   // Tickets: col[7]=date(MM-DD-YYYY), col[4]=level2, col[6]=status, col[10]=TAT,
@@ -2767,14 +2912,14 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
 
     const pctInstall = dbTotal>0?Math.round(inDone/dbTotal*100):0;
     const pctTicket  = dbTotal>0?Math.round(tkTotal/dbTotal*100):0;
-    const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;     const pctTech    = dbTotal>0?Math.round(tkTech/dbTotal*100):0;     const pctNonTech = dbTotal>0?Math.round(tkNonTech/dbTotal*100):0;
+    const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;
 
     // Issue type breakdown
     const issueTypes={};
     tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
 
     return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
-           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,pctTech,pctNonTech,issueTypes};
+           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,issueTypes};
   }
 
   // Build lookup for all months + overall
@@ -2816,10 +2961,8 @@ function buildCGMSummary(){
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
     {key:'tkTech',       label:'Tech'},
-    {key:'pctTech',      label:'Tech %', suffix:'%'},
     {key:'avgTAT',       label:'Tech resolution TAT', suffix:'hrs'},
     {key:'tkNonTech',    label:'Non tech'},
-    {key:'pctNonTech',   label:'Non tech %', suffix:'%'},
     {key:'avgNonTechTAT',label:'Non tech resolution TAT', suffix:'hrs'},
     {key:'rpTotal',      label:'Replacement'},
     {key:'pctInstall',   label:'% installation overall', pct:true},
@@ -2943,8 +3086,8 @@ function buildCGMTab(cgm){
     <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px">🎫 Tickets & Support</div>
     <div class="kpi-grid">
       ${cgmKPI('Tickets Received', cgmFmtNum(d.tkTotal), `${d.tkClosed} closed`, '#f59e0b')}
-      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `${d.pctTech}% of patients · Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
-      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `${d.pctNonTech}% of patients · Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
+      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
+      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
       ${cgmKPI('% Ticket Coverage', cgmFmtPct(d.pctTicket), `of ${d.dbTotal} patients`, '#0ea5e9')}
     </div>
 
@@ -3073,10 +3216,8 @@ function cgmDownloadExcel(){
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
     {key:'tkTech',       label:'Tech'},
-    {key:'pctTech',      label:'% Tech ticket coverage'},
     {key:'avgTAT',       label:'Tech resolution TAT (hrs)'},
     {key:'tkNonTech',    label:'Non tech'},
-    {key:'pctNonTech',   label:'% Non tech ticket coverage'},
     {key:'avgNonTechTAT',label:'Non tech resolution TAT (hrs)'},
     {key:'rpTotal',      label:'Replacement'},
     {key:'pctInstall',   label:'% installation overall'},
