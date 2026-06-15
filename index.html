@@ -3980,118 +3980,247 @@ async function loadPE2Data(){
 
 
 
-// ══ PE2 ACTIONABLES MODULE ══
-const PE2_ACTIONS_URL = 'https://script.google.com/macros/s/AKfycbxgCFULyeDnWSt_Sma3qULZfnq6sF5DkBxrB2Eb7t6V2pAxJhXqBN-AMT4X-6hEm8gPAA/exec';
-const PE2_DEFAULT_ACTIONS = [["A001", "174 active patients have zero engagement (score=0) — no welcome call, no coach session, no dr consult", "Zero Engagement Recovery", "", "", "", "open"], ["A002", "Field team coaching activation is only 23% vs IS at 67% — Doctor Basic plan (559 Field patients) is biggest gap", "IS vs Field Gap", "", "", "", "open"], ["A003", "May & Jun 2026 cohorts show sharp drop in welcome call completion (49% and 35%) — onboarding breaking down for recent enrollments", "Welcome Call Drop-off", "", "", "", "open"], ["A004", "Jun 2026 zero engagement rate is 52% — over half of June patients have had zero touchpoints", "New Cohort Zero Engagement", "", "", "", "open"], ["A005", "Doctor Basic plan has only 29% coaching completion across 656 patients — largest plan by volume with worst engagement", "Doctor Basic Plan Engagement", "", "", "", "open"], ["A006", "221 in-plan patients have not completed Dr consultation (407 in plan, only 189 done = 46%) — scheduling gap", "Dr Consultation Completion", "", "", "", "open"], ["A007", "Oct 2025 cohort still shows 28% zero engagement among active patients despite being 8+ months old — long-tail recovery needed", "Aged Zero Engagement Cohort", "", "", "", "open"], ["A008", "Physio and CBT sessions are significantly lower than diet sessions — coach mix imbalance across all patients", "Coach Mix Imbalance", "", "", "", "open"]];
 
-let pe2ActionsData = null;
+
+
+// ══ PE2 ACTIONABLES MODULE v2 ══
+
+// ══ PE2 ACTIONABLES MODULE v2 ══
+const PE2_ACTIONS_URL = 'https://script.google.com/macros/s/AKfycbykXCYIJIRXSk40h6luDm1fIML1S_zmSHTJKW1FGDquIwyN71DG2BhQewsmO58r13vuhQ/exec';
+const PE2_MO_OPTS = ["Oct 2025", "Nov 2025", "Dec 2025", "Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026"];
+const PE2_DEFAULT_ACTIONS = [["A001", "174 active patients have zero engagement (score=0) \u2014 no welcome call, no coach session, no dr consult", "Zero Engagement Recovery", "", "", "", "174 active patients, 29% of 604 active"], ["A002", "Field team coaching activation is only 23% vs IS at 67% \u2014 Doctor Basic plan (559 Field patients) is biggest gap", "IS vs Field Gap", "", "", "", "Field coaching: 23% (167/723), IS coaching: 67% (338/507)"], ["A003", "May & Jun 2026 cohorts show sharp drop in welcome call completion \u2014 May: 49%, Jun: 35%", "Welcome Call Drop-off", "", "", "", "May WC: 49%, Jun WC: 35%"], ["A004", "Jun 2026 zero engagement rate is 52% \u2014 over half of June patients have had zero touchpoints", "New Cohort Zero Engagement", "", "", "", "Jun 2026: 52% zero engagement (16/31 active)"], ["A005", "Doctor Basic plan has only 29% coaching completion across 656 patients \u2014 largest plan by volume with worst engagement", "Doctor Basic Plan Engagement", "", "", "", "Doctor Basic coaching: 29% (190/656)"], ["A006", "221 in-plan patients have not completed Dr consultation \u2014 407 in plan, only 189 done (46%)", "Dr Consultation Completion", "", "", "", "Dr consult done: 46% (189/407 in-plan)"], ["A007", "Oct 2025 cohort still shows 28% zero engagement among active patients despite being 8+ months old", "Aged Zero Engagement Cohort", "", "", "", "Oct 2025 zero engagement: 28% of active"], ["A008", "Mar & Apr 2026 cohorts show rising zero engagement (27% and 31%) \u2014 mid-program drop-off", "Mid-Program Drop-off", "", "", "", "Mar 2026 zero: 27%, Apr 2026 zero: 31%"]];
+// col indices: 0=id,1=actionable,2=category,3=date_taken,4=what_done,5=action_month,6=baseline,7+=weekly snapshots
+const PE2_COL = {id:0,actionable:1,category:2,date_taken:3,what_done:4,action_month:5,baseline:6,weeks_start:7};
+
+let pe2ActionsData = null;   // array of row arrays from sheet
+let pe2ActionsHeaders = [];  // header row
 let pe2ActionsLoading = false;
+const PE2_WEEK_MS = 7*24*60*60*1000;
+const PE2_LAST_SNAP_KEY = 'pe2_last_snapshot';
 
+// ── Metric calculators ──
+function pe2CalcMetric(actionId, filterMonth, patients) {
+  const pts = filterMonth && filterMonth !== 'All' ? patients.filter(p=>p.purchMo===filterMonth) : patients;
+  const active = pts.filter(p=>p.active);
+  const is_p = pts.filter(p=>p.team==='IS');
+  const fi_p = pts.filter(p=>p.team==='Field');
+  const pct = (n,d)=>d>0?Math.round(n/d*100):0;
+
+  switch(actionId) {
+    case 'A001': {
+      const z=active.filter(p=>p.score===0).length;
+      return z+' active zero-eng ('+pct(z,active.length)+'% of '+active.length+' active)';
+    }
+    case 'A002': {
+      const fiC=fi_p.filter(p=>p.coachDone).length;
+      const isC=is_p.filter(p=>p.coachDone).length;
+      return 'Field: '+pct(fiC,fi_p.length)+'% ('+fiC+'/'+fi_p.length+') | IS: '+pct(isC,is_p.length)+'% ('+isC+'/'+is_p.length+')';
+    }
+    case 'A003': {
+      const may=patients.filter(p=>p.purchMo==='May 2026');
+      const jun=patients.filter(p=>p.purchMo==='Jun 2026');
+      return 'May WC: '+pct(may.filter(p=>p.wcDone).length,may.length)+'% | Jun WC: '+pct(jun.filter(p=>p.wcDone).length,jun.length)+'%';
+    }
+    case 'A004': {
+      const jun=patients.filter(p=>p.purchMo==='Jun 2026');
+      const junAct=jun.filter(p=>p.active);
+      return 'Jun zero-eng: '+pct(junAct.filter(p=>p.score===0).length,junAct.length)+'% ('+junAct.filter(p=>p.score===0).length+'/'+junAct.length+' active)';
+    }
+    case 'A005': {
+      const db=pts.filter(p=>p.plan&&p.plan.toLowerCase().includes('doctor basic'));
+      return 'Doctor Basic coaching: '+pct(db.filter(p=>p.coachDone).length,db.length)+'% ('+db.filter(p=>p.coachDone).length+'/'+db.length+')';
+    }
+    case 'A006': {
+      const inp=pts.filter(p=>p.drInPlan);
+      return 'Dr consult: '+pct(inp.filter(p=>p.drDone).length,inp.length)+'% ('+inp.filter(p=>p.drDone).length+'/'+inp.length+' in-plan)';
+    }
+    case 'A007': {
+      const oct=patients.filter(p=>p.purchMo==='Oct 2025');
+      const octAct=oct.filter(p=>p.active);
+      return 'Oct zero-eng: '+pct(octAct.filter(p=>p.score===0).length,octAct.length)+'% ('+octAct.filter(p=>p.score===0).length+'/'+octAct.length+' active)';
+    }
+    case 'A008': {
+      const mar=patients.filter(p=>p.purchMo==='Mar 2026');
+      const apr=patients.filter(p=>p.purchMo==='Apr 2026');
+      const marAct=mar.filter(p=>p.active); const aprAct=apr.filter(p=>p.active);
+      return 'Mar zero: '+pct(marAct.filter(p=>p.score===0).length,marAct.length)+'% | Apr zero: '+pct(aprAct.filter(p=>p.score===0).length,aprAct.length)+'%';
+    }
+    default: return 'N/A';
+  }
+}
+
+// ── Load & init ──
 async function loadPE2Actions() {
   if(pe2ActionsLoading) return;
   pe2ActionsLoading = true;
   try {
     const res = await fetch(PE2_ACTIONS_URL);
     const raw = await res.json();
-    if(raw.length <= 1) {
-      await fetch(PE2_ACTIONS_URL, {method:'POST',body:JSON.stringify({action:'init',rows:PE2_DEFAULT_ACTIONS})});
-      pe2ActionsData = PE2_DEFAULT_ACTIONS.map(r=>mapAction(r));
+    if(!raw || raw.length <= 1) {
+      // Init sheet with defaults
+      await fetch(PE2_ACTIONS_URL,{method:'POST',body:JSON.stringify({action:'init',rows:PE2_DEFAULT_ACTIONS})});
+      pe2ActionsHeaders = ['id','actionable','category','date_action_taken','what_was_done','action_month','baseline'];
+      pe2ActionsData = PE2_DEFAULT_ACTIONS.map(r=>[...r]);
     } else {
-      pe2ActionsData = raw.slice(1).map(r=>mapAction(r));
+      pe2ActionsHeaders = raw[0];
+      pe2ActionsData = raw.slice(1);
     }
+    // Check if weekly snapshot needed
+    await pe2CheckWeeklySnapshot();
   } catch(e) {
     console.error('PE2 Actions load error:',e);
-    pe2ActionsData = PE2_DEFAULT_ACTIONS.map(r=>mapAction(r));
+    pe2ActionsHeaders = ['id','actionable','category','date_action_taken','what_was_done','action_month','baseline'];
+    pe2ActionsData = PE2_DEFAULT_ACTIONS.map(r=>[...r]);
   }
   pe2ActionsLoading = false;
   renderPE2Actions();
 }
 
-function mapAction(r) {
-  return {id:r[0],actionable:r[1],category:r[2],date_taken:r[3]||'',what_done:r[4]||'',result:r[5]||'',status:r[6]||'open'};
+async function pe2CheckWeeklySnapshot() {
+  if(!pe2Data || !pe2Data.patients) return;
+  const lastSnap = localStorage.getItem(PE2_LAST_SNAP_KEY);
+  const now = Date.now();
+  if(lastSnap && (now - parseInt(lastSnap)) < PE2_WEEK_MS) return;
+  // Take snapshot
+  const weekLabel = 'Week ' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const snapshots = {};
+  (pe2ActionsData||[]).forEach(row=>{
+    const id = row[PE2_COL.id];
+    const filterMonth = row[PE2_COL.action_month]||'';
+    snapshots[id] = pe2CalcMetric(id, filterMonth, pe2Data.patients);
+  });
+  try {
+    await fetch(PE2_ACTIONS_URL,{method:'POST',body:JSON.stringify({action:'addWeekSnapshot',weekLabel,snapshots})});
+    // Refresh data from sheet
+    const res2 = await fetch(PE2_ACTIONS_URL);
+    const raw2 = await res2.json();
+    if(raw2 && raw2.length > 1) {
+      pe2ActionsHeaders = raw2[0];
+      pe2ActionsData = raw2.slice(1);
+    }
+    localStorage.setItem(PE2_LAST_SNAP_KEY, now.toString());
+  } catch(e) { console.error('Snapshot error:',e); }
 }
 
-async function savePE2Action(id,date_taken,what_done,result,status) {
+async function savePE2Action(id,date_taken,what_done,action_month) {
   try {
-    await fetch(PE2_ACTIONS_URL,{method:'POST',body:JSON.stringify({action:'update',id,date_action_taken:date_taken,what_was_done:what_done,result,status})});
-    const a=pe2ActionsData.find(x=>x.id===id);
-    if(a){a.date_taken=date_taken;a.what_done=what_done;a.result=result;a.status=status;}
+    await fetch(PE2_ACTIONS_URL,{method:'POST',body:JSON.stringify({action:'update',id,date_action_taken:date_taken,what_was_done:what_done,action_month})});
+    const row=(pe2ActionsData||[]).find(r=>r[PE2_COL.id]===id);
+    if(row){row[PE2_COL.date_taken]=date_taken;row[PE2_COL.what_done]=what_done;row[PE2_COL.action_month]=action_month;}
   } catch(e){console.error('Save error:',e);}
 }
 
+// ── Render ──
 function renderPE2Actions() {
   const el=document.getElementById('pe2_actions_section');
   if(el) el.innerHTML=buildPE2Actions();
 }
 
 function buildPE2Actions() {
-  const data=pe2ActionsData||PE2_DEFAULT_ACTIONS.map(r=>mapAction(r));
-  const open=data.filter(a=>a.status==='open').length;
-  const done=data.filter(a=>a.status==='done').length;
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">'
+  const data=pe2ActionsData||PE2_DEFAULT_ACTIONS.map(r=>[...r]);
+  const headers=pe2ActionsHeaders;
+  const weekCols=headers.slice(PE2_COL.weeks_start)||[];
+  const open=data.filter(r=>!r[PE2_COL.date_taken]).length;
+  const done=data.filter(r=>r[PE2_COL.date_taken]).length;
+
+  let html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">'
     +'<div><div style="font-size:15px;font-weight:700;color:var(--text)">🎯 Actionables Tracker</div>'
-    +'<div style="font-size:12px;color:var(--muted);margin-top:2px">Based on live PE2 data · '+open+' open · '+done+' completed</div></div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-top:2px">Baseline: Jun 15 2026 · Weekly auto-snapshot · '+weekCols.length+' week(s) tracked</div></div>'
     +'<div style="display:flex;gap:8px">'
-    +'<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">'+open+' Open</span>'
-    +'<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">'+done+' Done</span>'
-    +'</div></div>'
-    +data.map(a=>buildActionCard(a)).join('')
-    +'<div style="margin-top:16px;padding:12px 16px;background:#eff6ff;border-radius:8px;font-size:11px;color:#1d4ed8">'
-    +'\u2139\ufe0f Click <strong>Edit</strong> on any actionable to record date, action taken, and result. Data syncs to Google Sheets automatically.</div>';
+    +'<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">'+open+' Pending</span>'
+    +'<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">'+done+' Actioned</span>'
+    +'</div></div>';
+
+  data.forEach(row=>{
+    html+=buildActionCard(row,headers,weekCols);
+  });
+
+  html+='<div style="margin-top:16px;padding:12px 16px;background:#eff6ff;border-radius:8px;font-size:11px;color:#1d4ed8">'
+    +'ℹ️ Results auto-calculated weekly from live PE2 data. Click <strong>Edit</strong> to record date and action taken.</div>';
+  return html;
 }
 
-function buildActionCard(a) {
-  const isDone=a.status==='done';
-  const hasFill=a.date_taken||a.what_done||a.result;
-  let fillHtml='';
-  if(hasFill) {
-    fillHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px">';
-    if(a.date_taken) fillHtml+='<div style="background:var(--surface2);border-radius:6px;padding:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:2px">DATE TAKEN</div><div style="font-size:12px;color:var(--text)">'+a.date_taken+'</div></div>';
-    if(a.what_done) fillHtml+='<div style="background:var(--surface2);border-radius:6px;padding:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:2px">ACTION TAKEN</div><div style="font-size:12px;color:var(--text)">'+a.what_done+'</div></div>';
-    if(a.result) {
-      const isGood=/improv|increas|up |better|higher|reduc/i.test(a.result);
-      fillHtml+='<div style="background:'+(isGood?'#d1fae5':'#fef3c7')+';border-radius:6px;padding:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:2px">RESULT</div><div style="font-size:12px;color:var(--text)">'+a.result+'</div></div>';
-    }
-    fillHtml+='</div>';
+function buildActionCard(row,headers,weekCols) {
+  const id=row[PE2_COL.id]||'';
+  const actionable=row[PE2_COL.actionable]||'';
+  const category=row[PE2_COL.category]||'';
+  const date_taken=row[PE2_COL.date_taken]||'';
+  const what_done=row[PE2_COL.what_done]||'';
+  const action_month=row[PE2_COL.action_month]||'';
+  const baseline=row[PE2_COL.baseline]||'';
+  const isActioned=!!date_taken;
+
+  // Weekly trend
+  let trendHtml='';
+  if(weekCols.length>0) {
+    trendHtml='<div style="margin-top:10px">'
+      +'<div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:6px">WEEKLY TREND</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    weekCols.forEach((wk,i)=>{
+      const val=row[PE2_COL.weeks_start+i]||'—';
+      const prevVal=i>0?(row[PE2_COL.weeks_start+i-1]||''):'';
+      // Try to extract first number for delta
+      const numNow=parseFloat((val.match(/\d+\.?\d*/)||[])[0]);
+      const numPrev=parseFloat((prevVal.match(/\d+\.?\d*/)||[])[0]);
+      let delta='';
+      if(!isNaN(numNow)&&!isNaN(numPrev)&&i>0) {
+        const diff=numNow-numPrev;
+        const isGood=(id==='A001'||id==='A004'||id==='A007'||id==='A008')?diff<0:diff>0;
+        if(diff!==0) delta='<span style="color:'+(isGood?'#059669':'#dc2626')+';font-size:9px;font-weight:700">'+(diff>0?'▲':'▼')+Math.abs(diff)+'</span>';
+      }
+      trendHtml+='<div style="background:var(--surface2);border-radius:6px;padding:6px 8px;min-width:80px">'
+        +'<div style="font-size:9px;color:var(--muted);margin-bottom:2px">'+wk+'</div>'
+        +'<div style="font-size:11px;color:var(--text);font-weight:600">'+val+' '+delta+'</div>'
+        +'</div>';
+    });
+    trendHtml+='</div></div>';
   }
-  return '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+(isDone?'#059669':'#f59e0b')+';border-radius:8px;padding:16px;margin-bottom:12px">'
+
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+(isActioned?'#059669':'#f59e0b')+';border-radius:8px;padding:16px;margin-bottom:12px">'
     +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
     +'<div style="flex:1">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'
-    +'<span style="font-size:10px;font-weight:700;background:'+(isDone?'#d1fae5':'#fef3c7')+';color:'+(isDone?'#065f46':'#92400e')+';padding:2px 8px;border-radius:10px">'+(isDone?'\u2705 DONE':'\u23f3 OPEN')+'</span>'
-    +'<span style="font-size:10px;color:var(--muted);background:var(--surface2);padding:2px 8px;border-radius:10px">'+a.category+'</span>'
-    +'<span style="font-size:10px;color:var(--muted)">'+a.id+'</span>'
+    +'<span style="font-size:10px;font-weight:700;background:'+(isActioned?'#d1fae5':'#fef3c7')+';color:'+(isActioned?'#065f46':'#92400e')+';padding:2px 8px;border-radius:10px">'+(isActioned?'✅ ACTIONED':'⏳ PENDING')+'</span>'
+    +'<span style="font-size:10px;color:var(--muted);background:var(--surface2);padding:2px 8px;border-radius:10px">'+category+'</span>'
+    +'<span style="font-size:10px;color:var(--muted)">'+id+'</span>'
+    +(action_month?'<span style="font-size:10px;color:#2563eb;background:#dbeafe;padding:2px 8px;border-radius:10px">'+action_month+'</span>':'')
     +'</div>'
-    +'<div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.5;margin-bottom:4px">'+a.actionable+'</div>'
-    +fillHtml
+    +'<div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.5;margin-bottom:6px">'+actionable+'</div>'
+    +'<div style="background:var(--surface2);border-radius:6px;padding:8px;margin-bottom:6px">'
+    +'<span style="font-size:10px;font-weight:600;color:var(--muted)">BASELINE (Jun 15): </span>'
+    +'<span style="font-size:11px;color:var(--text)">'+baseline+'</span></div>'
+    +(date_taken?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<div style="background:#f0fdf4;border-radius:6px;padding:6px 10px"><span style="font-size:10px;font-weight:600;color:#065f46">DATE: </span><span style="font-size:11px;color:var(--text)">'+date_taken+'</span></div>'
+      +(what_done?'<div style="background:#f0fdf4;border-radius:6px;padding:6px 10px;flex:1"><span style="font-size:10px;font-weight:600;color:#065f46">ACTION: </span><span style="font-size:11px;color:var(--text)">'+what_done+'</span></div>':'')
+      +'</div>':'')
+    +trendHtml
     +'</div>'
-    +'<button onclick="openPE2ActionEdit(&quot;'+a.id+'&quot;)" style="flex-shrink:0;padding:6px 14px;background:var(--brand);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>'
+    +'<button onclick="openPE2ActionEdit(&quot;'+id+'&quot;)" style="flex-shrink:0;padding:6px 14px;background:var(--brand);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>'
     +'</div></div>';
 }
 
 function openPE2ActionEdit(id) {
-  const a=(pe2ActionsData||[]).find(x=>x.id===id); if(!a) return;
+  const row=(pe2ActionsData||[]).find(r=>r[PE2_COL.id]===id); if(!row) return;
+  const date_taken=row[PE2_COL.date_taken]||'';
+  const what_done=row[PE2_COL.what_done]||'';
+  const action_month=row[PE2_COL.action_month]||'';
   const existing=document.getElementById('pe2_action_modal'); if(existing) existing.remove();
   const modal=document.createElement('div');
   modal.id='pe2_action_modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
-    +'<div style="font-size:15px;font-weight:700;color:#1e293b;margin-bottom:4px">Edit Actionable \u2014 '+a.id+'</div>'
-    +'<div style="font-size:12px;color:#64748b;margin-bottom:16px">'+a.actionable+'</div>'
+  const moOptions='<option value="">All Months</option>'+PE2_MO_OPTS.map(m=>'<option value="'+m+'"'+(action_month===m?' selected':'')+'>'+m+'</option>').join('');
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<div style="font-size:15px;font-weight:700;color:#1e293b;margin-bottom:4px">Edit — '+id+'</div>'
+    +'<div style="font-size:11px;color:#64748b;margin-bottom:16px">'+((pe2ActionsData||[]).find(r=>r[PE2_COL.id]===id)||[])[PE2_COL.actionable]+'</div>'
     +'<div style="margin-bottom:14px"><label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">DATE ACTION TAKEN</label>'
-    +'<input id="pa_date" type="date" value="'+a.date_taken+'" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box"></div>'
+    +'<input id="pa_date" type="date" value="'+date_taken+'" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box"></div>'
     +'<div style="margin-bottom:14px"><label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">WHAT ACTION WAS TAKEN</label>'
-    +'<textarea id="pa_what" rows="3" placeholder="Describe what action was taken..." style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">'+a.what_done+'</textarea></div>'
-    +'<div style="margin-bottom:14px"><label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">RESULT / IMPROVEMENT OBSERVED</label>'
-    +'<textarea id="pa_result" rows="3" placeholder="Describe the result or improvement seen..." style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">'+a.result+'</textarea></div>'
-    +'<div style="margin-bottom:20px"><label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:6px">STATUS</label>'
-    +'<div style="display:flex;gap:16px">'
-    +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="pa_status" value="open" '+(a.status==='open'?'checked':'')+'>  Open</label>'
-    +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="pa_status" value="done" '+(a.status==='done'?'checked':'')+'>  Done</label>'
-    +'</div></div>'
+    +'<textarea id="pa_what" rows="3" placeholder="Describe what was done..." style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">'+what_done+'</textarea></div>'
+    +'<div style="margin-bottom:20px"><label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">ACTION MONTH (which month patients this targets)</label>'
+    +'<select id="pa_month" style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box">'+moOptions+'</select></div>'
     +'<div style="display:flex;gap:10px;justify-content:flex-end">'
     +'<button onclick="document.getElementById(&quot;pe2_action_modal&quot;).remove()" style="padding:8px 18px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>'
-    +'<button onclick="submitPE2Action(&quot;'+id+'&quot;)" style="padding:8px 18px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Save &amp; Sync</button>'
+    +'<button onclick="submitPE2Action(&quot;'+id+'&quot;)" style="padding:8px 18px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Save & Sync</button>'
     +'</div></div>';
   document.body.appendChild(modal);
 }
@@ -4099,11 +4228,10 @@ function openPE2ActionEdit(id) {
 async function submitPE2Action(id) {
   const date_taken=document.getElementById('pa_date').value;
   const what_done=document.getElementById('pa_what').value;
-  const result=document.getElementById('pa_result').value;
-  const status=document.querySelector('input[name="pa_status"]:checked')?.value||'open';
+  const action_month=document.getElementById('pa_month').value;
   const btn=document.querySelector('#pe2_action_modal button:last-child');
   if(btn){btn.textContent='Saving...';btn.disabled=true;}
-  await savePE2Action(id,date_taken,what_done,result,status);
+  await savePE2Action(id,date_taken,what_done,action_month);
   document.getElementById('pe2_action_modal').remove();
   renderPE2Actions();
 }
