@@ -2767,14 +2767,14 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
 
     const pctInstall = dbTotal>0?Math.round(inDone/dbTotal*100):0;
     const pctTicket  = dbTotal>0?Math.round(tkTotal/dbTotal*100):0;
-    const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;
+    const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;     const pctTech    = dbTotal>0?Math.round(tkTech/dbTotal*100):0;     const pctNonTech = dbTotal>0?Math.round(tkNonTech/dbTotal*100):0;
 
     // Issue type breakdown
     const issueTypes={};
     tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
 
     return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
-           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,issueTypes};
+           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,pctTech,pctNonTech,issueTypes};
   }
 
   // Build lookup for all months + overall
@@ -2816,8 +2816,10 @@ function buildCGMSummary(){
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
     {key:'tkTech',       label:'Tech'},
+    {key:'pctTech',      label:'Tech %', suffix:'%'},
     {key:'avgTAT',       label:'Tech resolution TAT', suffix:'hrs'},
     {key:'tkNonTech',    label:'Non tech'},
+    {key:'pctNonTech',   label:'Non tech %', suffix:'%'},
     {key:'avgNonTechTAT',label:'Non tech resolution TAT', suffix:'hrs'},
     {key:'rpTotal',      label:'Replacement'},
     {key:'pctInstall',   label:'% installation overall', pct:true},
@@ -2941,8 +2943,8 @@ function buildCGMTab(cgm){
     <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px">🎫 Tickets & Support</div>
     <div class="kpi-grid">
       ${cgmKPI('Tickets Received', cgmFmtNum(d.tkTotal), `${d.tkClosed} closed`, '#f59e0b')}
-      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
-      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
+      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `${d.pctTech}% of patients · Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
+      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `${d.pctNonTech}% of patients · Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
       ${cgmKPI('% Ticket Coverage', cgmFmtPct(d.pctTicket), `of ${d.dbTotal} patients`, '#0ea5e9')}
     </div>
 
