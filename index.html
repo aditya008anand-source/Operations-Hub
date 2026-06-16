@@ -2846,13 +2846,13 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[7]||''),name:cgmSV(r[0]||'')});
   });
 
-  // Install: col[4]=start_at, col[8]=status, col[23]=phone, col[39]=cgm
+  // Install: col[6]=start_at, col[4]=status, col[2]=phone, col[7]=cgm type
   inRaw.slice(1).forEach(r=>{
-    const d=cgmParseDate(r[4]||''); if(!d) return;
-    const phones=cgmNormPhone(r[23]||'');
-    const cgmRaw=(r[39]||'').toLowerCase();
+    const d=cgmParseDate(r[6]||''); if(!d) return;
+    const phones=cgmNormPhone(r[2]||'');
+    const cgmRaw=(r[7]||'').toLowerCase();
     ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
-      y:d.y,mo:d.mo,label:d.label,status:(r[8]||'').toLowerCase()});
+      y:d.y,mo:d.mo,label:d.label,status:(r[4]||'').toLowerCase()});
   });
 
   // Tickets: col[7]=date(MM-DD-YYYY), col[4]=level2, col[6]=status, col[10]=TAT,
@@ -2913,13 +2913,15 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const pctInstall = dbTotal>0?Math.round(inDone/dbTotal*100):0;
     const pctTicket  = dbTotal>0?Math.round(tkTotal/dbTotal*100):0;
     const pctReplace = dbTotal>0?Math.round(rpTotal/dbTotal*100):0;
+    const pctTech    = dbTotal>0?Math.round(tkTech/dbTotal*100):0;
+    const pctNonTech = dbTotal>0?Math.round(tkNonTech/dbTotal*100):0;
 
     // Issue type breakdown
     const issueTypes={};
     tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
 
     return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
-           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,issueTypes};
+           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,pctTech,pctNonTech,issueTypes};
   }
 
   // Build lookup for all months + overall
@@ -3086,8 +3088,8 @@ function buildCGMTab(cgm){
     <div class="section-title" style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px">🎫 Tickets & Support</div>
     <div class="kpi-grid">
       ${cgmKPI('Tickets Received', cgmFmtNum(d.tkTotal), `${d.tkClosed} closed`, '#f59e0b')}
-      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
-      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
+      ${cgmKPI('Tech Issues', cgmFmtNum(d.tkTech), `${d.pctTech}% of patients · Avg TAT: ${d.avgTAT}hrs`, '#ef4444')}
+      ${cgmKPI('Non-Tech Issues', cgmFmtNum(d.tkNonTech), `${d.pctNonTech}% of patients · Avg TAT: ${d.avgNonTechTAT}hrs`, '#f97316')}
       ${cgmKPI('% Ticket Coverage', cgmFmtPct(d.pctTicket), `of ${d.dbTotal} patients`, '#0ea5e9')}
     </div>
 
@@ -3216,8 +3218,10 @@ function cgmDownloadExcel(){
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
     {key:'tkTech',       label:'Tech'},
+    {key:'pctTech',      label:'% Tech ticket coverage'},
     {key:'avgTAT',       label:'Tech resolution TAT (hrs)'},
     {key:'tkNonTech',    label:'Non tech'},
+    {key:'pctNonTech',   label:'% Non tech ticket coverage'},
     {key:'avgNonTechTAT',label:'Non tech resolution TAT (hrs)'},
     {key:'rpTotal',      label:'Replacement'},
     {key:'pctInstall',   label:'% installation overall'},
@@ -4054,7 +4058,7 @@ async function loadPE2Actions() {
   if(pe2ActionsLoading) return;
   pe2ActionsLoading = true;
   try {
-    const res = await fetch(PE2_ACTIONS_URL);
+    const res = await fetch(PE2_ACTIONS_URL + '?t=' + Date.now());
     const raw = await res.json();
     if(!raw || raw.length <= 1) {
       // Init sheet with defaults
@@ -4092,7 +4096,7 @@ async function pe2CheckWeeklySnapshot() {
   try {
     await fetch(PE2_ACTIONS_URL,{method:'POST',body:JSON.stringify({action:'addWeekSnapshot',weekLabel,snapshots})});
     // Refresh data from sheet
-    const res2 = await fetch(PE2_ACTIONS_URL);
+    const res2 = await fetch(PE2_ACTIONS_URL + '?t=' + Date.now());
     const raw2 = await res2.json();
     if(raw2 && raw2.length > 1) {
       pe2ActionsHeaders = raw2[0];
