@@ -189,33 +189,63 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
 </div>
 
 <!-- ══ ADMIN PANEL ══ -->
-<div id="adminPanel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;overflow-y:auto;padding:20px">
-  <div style="background:#fff;border-radius:16px;max-width:700px;margin:0 auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
-      <div style="font-size:18px;font-weight:700;color:#1e293b">⚙️ User Management</div>
-      <button onclick="closeAdminPanel()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748b">✕</button>
+<div id="adminPanel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;width:100%;max-width:920px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <div style="font-size:20px;font-weight:700;color:#1e293b">User Management</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="openAddUserModal()" style="padding:8px 18px;background:#1a6b4a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">+ Add User</button>
+        <button onclick="closeAdminPanel()" style="padding:8px 18px;background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Close</button>
+      </div>
     </div>
 
-    <!-- Add User -->
-    <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:20px;border:1px solid #e2e8f0">
-      <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:12px">Add New User</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        <input id="newEmail" type="email" placeholder="Email" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
-        <input id="newName" type="text" placeholder="Display Name" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:center">
-        <input id="newPwd" type="password" placeholder="Password" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
-        <select id="newRole" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button onclick="addUser()" style="padding:8px 16px;background:#1a6b4a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-      </div>
-      <div id="addUserError" style="color:#dc2626;font-size:11px;margin-top:6px;min-height:16px"></div>
-    </div>
+    <!-- Body: left user list + right permissions -->
+    <div style="display:flex;flex:1;overflow:hidden">
 
-    <!-- User List -->
-    <div id="adminUserList"></div>
+      <!-- Left: user list -->
+      <div style="width:260px;flex-shrink:0;border-right:1px solid #e2e8f0;overflow-y:auto;padding:12px">
+        <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1px;padding:4px 8px;margin-bottom:6px">USERS</div>
+        <div id="adminUserList"></div>
+      </div>
+
+      <!-- Right: permissions for selected user -->
+      <div style="flex:1;overflow-y:auto;padding:20px" id="adminPermPanel">
+        <div style="color:#94a3b8;font-size:13px;text-align:center;margin-top:60px">← Select a user to manage permissions</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add User Modal -->
+<div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9500;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:16px;font-weight:700;color:#1e293b;margin-bottom:16px">Add New User</div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">DISPLAY NAME</label>
+      <input id="newName" type="text" placeholder="Full name" style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">EMAIL</label>
+      <input id="newEmail" type="email" placeholder="user@example.com" style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">PASSWORD</label>
+      <input id="newPwd" type="password" placeholder="Min 6 characters" style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">ROLE</label>
+      <select id="newRole" style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;font-size:13px;box-sizing:border-box">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div id="addUserError" style="color:#dc2626;font-size:11px;margin-bottom:10px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('addUserModal').style.display='none'" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+      <button onclick="addUser()" style="padding:8px 18px;background:#1a6b4a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Add User</button>
+    </div>
   </div>
 </div>
 
@@ -4463,60 +4493,101 @@ async function doLogout() {
 // ── Admin Panel ──
 function openAdminPanel() {
   if(currentRole !== 'admin') return;
-  document.getElementById('adminPanel').style.display = 'block';
+  document.getElementById('adminPanel').style.display = 'flex';
   loadUserList();
 }
 function closeAdminPanel() {
   document.getElementById('adminPanel').style.display = 'none';
 }
+function openAddUserModal() {
+  document.getElementById('newName').value='';
+  document.getElementById('newEmail').value='';
+  document.getElementById('newPwd').value='';
+  document.getElementById('newRole').value='user';
+  document.getElementById('addUserError').textContent='';
+  document.getElementById('addUserModal').style.display='flex';
+}
+
+let selectedUserUid = null;
 
 async function loadUserList() {
   const snap = await fbDB.ref('users').get();
   const el = document.getElementById('adminUserList');
-  if(!snap.exists()) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No users yet.</div>'; return; }
+  if(!snap.exists()) { el.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:8px">No users yet.</div>'; return; }
   const users = snap.val();
-  const tabs = getModuleTabs();
-
   let html = '';
   Object.entries(users).forEach(([uid, u]) => {
     if(u.hidden) return;
     const isAdmin = u.role === 'admin';
-    const perms = u.permissions || {};
-
-    // Module toggles
-    let modToggles = tabs.map(t => {
-      const key = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
-      const modKey = key ? key[1] : '';
-      const label = t.textContent.trim();
-      const checked = isAdmin || perms[modKey] === true;
-      const disabled = isAdmin ? 'disabled' : '';
-      return `<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#475569;cursor:pointer;white-space:nowrap">
-        <input type="checkbox" ${checked?'checked':''} ${disabled} onchange="togglePerm('${uid}','${modKey}',this.checked)"
-          style="cursor:pointer"> ${label}
-      </label>`;
-    }).join('');
-
-    html += `<div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid #e2e8f0">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <div>
-          <div style="font-size:13px;font-weight:600;color:#1e293b">${u.name||u.email}</div>
-          <div style="font-size:11px;color:#64748b">${u.email}</div>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${isAdmin?'#d1fae5':'#dbeafe'};color:${isAdmin?'#065f46':'#1d4ed8'};font-weight:600">${isAdmin?'ADMIN':'USER'}</span>
-          <button onclick="openChangePwd('${uid}','${u.name||u.email}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;cursor:pointer">Change Pwd</button>
-          <button onclick="toggleAdmin('${uid}','${isAdmin}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:${isAdmin?'#fef3c7':'#f0fdf4'};color:${isAdmin?'#92400e':'#065f46'};border:1px solid ${isAdmin?'#fde68a':'#bbf7d0'};cursor:pointer">${isAdmin?'Remove Admin':'Make Admin'}</button>
-          <button onclick="removeUser('${uid}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;cursor:pointer">Remove</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">${modToggles}</div>
+    const isSelected = uid === selectedUserUid;
+    html += `<div onclick="selectUser('${uid}')" style="padding:10px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px;background:${isSelected?'#f0fdf4':'transparent'};border:1px solid ${isSelected?'#bbf7d0':'transparent'};transition:all .15s">
+      <div style="font-size:13px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name||u.email}</div>
+      <div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.email}</div>
+      <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;background:${isAdmin?'#d1fae5':'#dbeafe'};color:${isAdmin?'#065f46':'#1d4ed8'}">${isAdmin?'Admin':'General User'}</span>
     </div>`;
   });
-  el.innerHTML = html || '<div style="color:var(--muted);font-size:13px">No users yet.</div>';
+  el.innerHTML = html || '<div style="color:#94a3b8;font-size:13px;padding:8px">No users yet.</div>';
+  // Re-render right panel if user still selected
+  if(selectedUserUid && users[selectedUserUid]) renderUserPerms(selectedUserUid, users[selectedUserUid]);
+}
+
+async function selectUser(uid) {
+  selectedUserUid = uid;
+  const snap = await fbDB.ref('users/'+uid).get();
+  if(!snap.exists()) return;
+  renderUserPerms(uid, snap.val());
+  // Refresh left list to show selection highlight
+  loadUserList();
+}
+
+function renderUserPerms(uid, u) {
+  const isAdmin = u.role === 'admin';
+  const perms = u.permissions || {};
+  const tabs = getModuleTabs();
+  let modRows = tabs.map(t => {
+    const key = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+    const modKey = key ? key[1] : '';
+    const label = t.textContent.trim();
+    const checked = isAdmin || perms[modKey] === true;
+    const toggleId = 'perm_'+modKey+'_'+uid;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid #f1f5f9">
+      <div>
+        <div style="font-size:14px;font-weight:500;color:#1e293b">${label}</div>
+        <div style="font-size:11px;color:#94a3b8">${modKey.toUpperCase()}</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:${isAdmin?'not-allowed':'pointer'}">
+        <input type="checkbox" id="${toggleId}" ${checked?'checked':''} ${isAdmin?'disabled':''} onchange="togglePerm('${uid}','${modKey}',this.checked)"
+          style="opacity:0;width:0;height:0;position:absolute">
+        <span onclick="" style="position:absolute;inset:0;background:${checked?'#1a6b4a':'#cbd5e1'};border-radius:24px;transition:.3s;cursor:${isAdmin?'not-allowed':'pointer'}">
+          <span style="position:absolute;height:18px;width:18px;left:${checked?'23px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.3s"></span>
+        </span>
+      </label>
+    </div>`;
+  }).join('');
+
+  document.getElementById('adminPermPanel').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#1e293b">${u.name||u.email}</div>
+        <div style="font-size:12px;color:#64748b">${u.email}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="toggleAdmin('${uid}','${isAdmin}')" style="padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:${isAdmin?'#fef3c7':'#f0fdf4'};color:${isAdmin?'#92400e':'#065f46'};border:1px solid ${isAdmin?'#fde68a':'#bbf7d0'}">${isAdmin?'↓ Remove Admin':'↑ Make Admin'}</button>
+        <button onclick="openChangePwd('${uid}','${u.name||u.email}')" style="padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe">🔑 Reset Password</button>
+        <button onclick="removeUser('${uid}')" style="padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#fef2f2;color:#dc2626;border:1px solid #fecaca">🗑 Remove User</button>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:1px;margin-bottom:4px">MODULE ACCESS</div>
+    ${isAdmin?'<div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;font-size:12px;color:#065f46;margin-bottom:12px">Admin has access to all modules automatically.</div>':''}
+    ${modRows}
+  `;
 }
 
 async function togglePerm(uid, modKey, val) {
   await fbDB.ref('users/' + uid + '/permissions/' + modKey).set(val);
+  // Re-render toggles to reflect new state
+  const snap = await fbDB.ref('users/'+uid).get();
+  if(snap.exists()) renderUserPerms(uid, snap.val());
 }
 
 async function toggleAdmin(uid, isCurrentlyAdmin) {
@@ -4528,6 +4599,9 @@ async function toggleAdmin(uid, isCurrentlyAdmin) {
   }).filter(Boolean));
   await fbDB.ref('users/' + uid).update({role: newRole, permissions: newPerms});
   loadUserList();
+  // Re-render right panel
+  const snap = await fbDB.ref('users/'+uid).get();
+  if(snap.exists()) renderUserPerms(uid, snap.val());
 }
 
 async function removeUser(uid) {
@@ -4585,6 +4659,7 @@ async function addUser() {
     document.getElementById('newEmail').value = '';
     document.getElementById('newName').value = '';
     document.getElementById('newPwd').value = '';
+    document.getElementById('addUserModal').style.display = 'none';
     loadUserList();
   } catch(e) {
     let msg = e.message;
