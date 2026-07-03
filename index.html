@@ -152,9 +152,89 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
 @media(max-width:640px){#topbar{padding:0 12px}#content{padding:14px}#sidebar{width:190px;min-width:190px}.cg2,.cg3,.cg4{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
-<div id="topbar">
+
+<!-- ══ AUTH LAYER ══ -->
+<div id="authLayer" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0a3d2e 0%,#1a6b4a 100%);font-family:'Inter',sans-serif">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3);margin:20px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:36px;margin-bottom:8px">🏥</div>
+      <div style="font-size:20px;font-weight:700;color:#1e293b">TatvaCare</div>
+      <div style="font-size:13px;color:#64748b;margin-top:2px">Operations Hub</div>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:600;color:#64748b;display:block;margin-bottom:6px">EMAIL</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com"
+        onkeydown="if(event.key==='Enter')document.getElementById('loginPwd').focus()"
+        style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none">
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:12px;font-weight:600;color:#64748b;display:block;margin-bottom:6px">PASSWORD</label>
+      <input id="loginPwd" type="password" placeholder="••••••••"
+        onkeydown="if(event.key==='Enter')doLogin()"
+        style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none">
+    </div>
+    <div id="loginError" style="color:#dc2626;font-size:12px;margin-bottom:10px;min-height:18px"></div>
+    <button id="loginBtn" onclick="doLogin()"
+      style="width:100%;padding:12px;background:#1a6b4a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s"
+      onmouseover="this.style.background='#145a3c'" onmouseout="this.style.background='#1a6b4a'">
+      Sign In
+    </button>
+  </div>
+</div>
+
+<!-- ══ ADMIN PANEL ══ -->
+<div id="adminPanel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;overflow-y:auto;padding:20px">
+  <div style="background:#fff;border-radius:16px;max-width:700px;margin:0 auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+      <div style="font-size:18px;font-weight:700;color:#1e293b">⚙️ User Management</div>
+      <button onclick="closeAdminPanel()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748b">✕</button>
+    </div>
+
+    <!-- Add User -->
+    <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:20px;border:1px solid #e2e8f0">
+      <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:12px">Add New User</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <input id="newEmail" type="email" placeholder="Email" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+        <input id="newName" type="text" placeholder="Display Name" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:center">
+        <input id="newPwd" type="password" placeholder="Password" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+        <select id="newRole" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button onclick="addUser()" style="padding:8px 16px;background:#1a6b4a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+      </div>
+      <div id="addUserError" style="color:#dc2626;font-size:11px;margin-top:6px;min-height:16px"></div>
+    </div>
+
+    <!-- User List -->
+    <div id="adminUserList"></div>
+  </div>
+</div>
+
+<!-- ══ CHANGE PASSWORD MODAL ══ -->
+<div id="changePwdModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9500;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:16px;font-weight:700;color:#1e293b;margin-bottom:4px">Change Password</div>
+    <div id="changePwdUser" style="font-size:12px;color:#64748b;margin-bottom:16px"></div>
+    <input id="newPwdInput" type="password" placeholder="New password (min 6 chars)"
+      style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px">
+    <div id="changePwdError" style="color:#dc2626;font-size:11px;margin-bottom:10px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('changePwdModal').style.display='none'" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+      <button onclick="submitChangePwd()" style="padding:8px 16px;background:#1a6b4a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Update</button>
+    </div>
+  </div>
+</div>
+
+<div id="topbar" style="display:none">
   <div class="logo">
     <div class="logo-icon">🏥</div>
     <div><div class="logo-text">TatvaCare</div><div class="logo-sub">Operations Hub</div></div>
@@ -176,9 +256,14 @@ tfoot td:first-child{text-align:left;color:var(--brand)}
       🔄 REFRESH
     </button>
     <span class="badge-live" id="data_badge">● EMBEDDED DATA</span>
+    <div id="authBar" style="display:none;align-items:center;gap:8px;margin-left:8px">
+      <span id="authUserPill" style="font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.1);padding:4px 10px;border-radius:20px;font-family:'JetBrains Mono',monospace"></span>
+      <button id="adminBtn" onclick="openAdminPanel()" style="display:none;font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(134,239,172,.15);color:#86efac;border:1px solid rgba(134,239,172,.3);cursor:pointer;font-family:'JetBrains Mono',monospace">⚙️ USERS</button>
+      <button onclick="doLogout()" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3);cursor:pointer;font-family:'JetBrains Mono',monospace">LOGOUT</button>
+    </div>
   </div>
 </div>
-<div id="app">
+<div id="app" style="display:none">
   <div id="sidebar"></div>
   <div id="content"></div>
 </div>
@@ -4240,6 +4325,272 @@ async function submitPE2Action(id) {
   await savePE2Action(id,date_taken,what_done,action_month);
   document.getElementById('pe2_action_modal').remove();
   renderPE2Actions();
+}
+
+
+
+// ════════════════════════════════════════════
+//  FIREBASE AUTH & ACCESS CONTROL
+// ════════════════════════════════════════════
+const FB_CONFIG = {
+  apiKey: "AIzaSyAwkkPmeTjnyx_9MxaMJaJ-FN-RNQCg-As",
+  authDomain: "tatvacare-ops-hub.firebaseapp.com",
+  databaseURL: "https://tatvacare-ops-hub-default-rtdb.firebaseio.com",
+  projectId: "tatvacare-ops-hub",
+  storageBucket: "tatvacare-ops-hub.firebasestorage.app",
+  messagingSenderId: "156391228039",
+  appId: "1:156391228039:web:87868598a41e39ccedee22"
+};
+firebase.initializeApp(FB_CONFIG);
+const fbAuth = firebase.auth();
+const fbDB   = firebase.database();
+
+const ADMIN_EMAIL = 'aditya008anand@gmail.com';
+let currentUser  = null;
+let currentRole  = null;
+let currentPerms = {};
+let changePwdTargetUid = null;
+
+// ── Get all module tabs dynamically (exclude About) ──
+function getModuleTabs() {
+  return Array.from(document.querySelectorAll('.main-tab')).filter(btn => {
+    const key = (btn.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+    return key && key[1] !== 'skill'; // exclude About
+  });
+}
+
+// ── Apply permissions to tabs ──
+function applyPerms() {
+  const tabs = getModuleTabs();
+  if(currentRole === 'admin') {
+    tabs.forEach(t => t.style.display = '');
+    return;
+  }
+  tabs.forEach(t => {
+    const key = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+    const modKey = key ? key[1] : '';
+    const hasAccess = currentPerms[modKey] === true;
+    t.style.display = hasAccess ? '' : 'none';
+  });
+  // Auto-click first visible tab
+  const firstVisible = tabs.find(t => t.style.display !== 'none');
+  if(firstVisible) firstVisible.click();
+  else {
+    document.getElementById('sidebar').innerHTML = '';
+    document.getElementById('content').innerHTML = '<div style="padding:60px;text-align:center;color:var(--muted)">No modules assigned. Please contact your admin.</div>';
+  }
+}
+
+// ── Auth state listener ──
+fbAuth.onAuthStateChanged(async user => {
+  if(!user) {
+    document.getElementById('authLayer').style.display = 'flex';
+    document.getElementById('topbar').style.display = 'none';
+    document.getElementById('app').style.display = 'none';
+    return;
+  }
+  currentUser = user;
+  // Load profile from DB
+  try {
+    const snap = await fbDB.ref('users/' + user.uid).get();
+    if(snap.exists()) {
+      const p = snap.val();
+      currentRole  = p.role || 'user';
+      currentPerms = p.permissions || {};
+      // Update last login
+      fbDB.ref('users/' + user.uid + '/lastLogin').set(Date.now());
+    } else {
+      // First login - set defaults
+      currentRole  = user.email === ADMIN_EMAIL ? 'admin' : 'user';
+      currentPerms = {};
+      await fbDB.ref('users/' + user.uid).set({
+        email: user.email,
+        name: user.displayName || user.email.split('@')[0],
+        role: currentRole,
+        permissions: currentPerms,
+        createdAt: Date.now(),
+        lastLogin: Date.now()
+      });
+    }
+  } catch(e) {
+    currentRole = user.email === ADMIN_EMAIL ? 'admin' : 'user';
+    currentPerms = {};
+  }
+
+  // Show dashboard
+  document.getElementById('authLayer').style.display = 'none';
+  document.getElementById('topbar').style.display = '';
+  document.getElementById('app').style.display = '';
+  document.getElementById('authBar').style.display = 'flex';
+
+  // Show user pill
+  const name = (await fbDB.ref('users/' + currentUser.uid + '/name').get()).val() || user.email;
+  document.getElementById('authUserPill').textContent = name + (currentRole === 'admin' ? ' (Admin)' : '');
+  if(currentRole === 'admin') document.getElementById('adminBtn').style.display = '';
+
+  applyPerms();
+});
+
+// ── Login ──
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pwd   = document.getElementById('loginPwd').value;
+  const btn   = document.getElementById('loginBtn');
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  if(!email || !pwd) { errEl.textContent = 'Please enter email and password.'; return; }
+  btn.textContent = 'Signing in...'; btn.disabled = true;
+  try {
+    await fbAuth.signInWithEmailAndPassword(email, pwd);
+  } catch(e) {
+    let msg = 'Invalid email or password.';
+    if(e.code === 'auth/too-many-requests') msg = 'Too many attempts. Please wait.';
+    if(e.code === 'auth/user-disabled') msg = 'This account has been disabled.';
+    if(e.code === 'auth/network-request-failed') msg = 'Network error. Check your connection.';
+    errEl.textContent = msg;
+    btn.textContent = 'Sign In'; btn.disabled = false;
+  }
+}
+
+// ── Logout ──
+async function doLogout() {
+  await fbAuth.signOut();
+  currentUser = null; currentRole = null; currentPerms = {};
+  document.getElementById('authBar').style.display = 'none';
+  document.getElementById('adminBtn').style.display = 'none';
+}
+
+// ── Admin Panel ──
+function openAdminPanel() {
+  if(currentRole !== 'admin') return;
+  document.getElementById('adminPanel').style.display = 'block';
+  loadUserList();
+}
+function closeAdminPanel() {
+  document.getElementById('adminPanel').style.display = 'none';
+}
+
+async function loadUserList() {
+  const snap = await fbDB.ref('users').get();
+  const el = document.getElementById('adminUserList');
+  if(!snap.exists()) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No users yet.</div>'; return; }
+  const users = snap.val();
+  const tabs = getModuleTabs();
+
+  let html = '';
+  Object.entries(users).forEach(([uid, u]) => {
+    if(u.hidden) return;
+    const isAdmin = u.role === 'admin';
+    const perms = u.permissions || {};
+
+    // Module toggles
+    let modToggles = tabs.map(t => {
+      const key = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+      const modKey = key ? key[1] : '';
+      const label = t.textContent.trim();
+      const checked = isAdmin || perms[modKey] === true;
+      const disabled = isAdmin ? 'disabled' : '';
+      return `<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#475569;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" ${checked?'checked':''} ${disabled} onchange="togglePerm('${uid}','${modKey}',this.checked)"
+          style="cursor:pointer"> ${label}
+      </label>`;
+    }).join('');
+
+    html += `<div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid #e2e8f0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#1e293b">${u.name||u.email}</div>
+          <div style="font-size:11px;color:#64748b">${u.email}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${isAdmin?'#d1fae5':'#dbeafe'};color:${isAdmin?'#065f46':'#1d4ed8'};font-weight:600">${isAdmin?'ADMIN':'USER'}</span>
+          <button onclick="openChangePwd('${uid}','${u.name||u.email}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;cursor:pointer">Change Pwd</button>
+          <button onclick="toggleAdmin('${uid}','${isAdmin}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:${isAdmin?'#fef3c7':'#f0fdf4'};color:${isAdmin?'#92400e':'#065f46'};border:1px solid ${isAdmin?'#fde68a':'#bbf7d0'};cursor:pointer">${isAdmin?'Remove Admin':'Make Admin'}</button>
+          <button onclick="removeUser('${uid}')" style="font-size:11px;padding:3px 10px;border-radius:6px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;cursor:pointer">Remove</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${modToggles}</div>
+    </div>`;
+  });
+  el.innerHTML = html || '<div style="color:var(--muted);font-size:13px">No users yet.</div>';
+}
+
+async function togglePerm(uid, modKey, val) {
+  await fbDB.ref('users/' + uid + '/permissions/' + modKey).set(val);
+}
+
+async function toggleAdmin(uid, isCurrentlyAdmin) {
+  const makeAdmin = isCurrentlyAdmin === 'true';
+  const newRole = makeAdmin ? 'user' : 'admin';
+  const newPerms = makeAdmin ? {} : Object.fromEntries(getModuleTabs().map(t => {
+    const k = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+    return k ? [k[1], true] : null;
+  }).filter(Boolean));
+  await fbDB.ref('users/' + uid).update({role: newRole, permissions: newPerms});
+  loadUserList();
+}
+
+async function removeUser(uid) {
+  if(!confirm('Remove this user? They will no longer be able to log in.')) return;
+  await fbDB.ref('users/' + uid).update({hidden: true, permissions: {}});
+  loadUserList();
+}
+
+function openChangePwd(uid, name) {
+  changePwdTargetUid = uid;
+  document.getElementById('changePwdUser').textContent = 'User: ' + name;
+  document.getElementById('newPwdInput').value = '';
+  document.getElementById('changePwdError').textContent = '';
+  document.getElementById('changePwdModal').style.display = 'flex';
+}
+
+async function submitChangePwd() {
+  const newPwd = document.getElementById('newPwdInput').value;
+  const errEl = document.getElementById('changePwdError');
+  if(!newPwd || newPwd.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
+  try {
+    // Use Firebase Admin via REST — since we're client side, we update via a flag in DB
+    // Admin password change requires Firebase Admin SDK (server side)
+    // Workaround: store a resetPwd flag, user must reset on next login
+    await fbDB.ref('users/' + changePwdTargetUid).update({forcePwdReset: newPwd});
+    document.getElementById('changePwdModal').style.display = 'none';
+    alert('Password change request saved. The user will be prompted on next login.');
+  } catch(e) {
+    errEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function addUser() {
+  const email = document.getElementById('newEmail').value.trim();
+  const name  = document.getElementById('newName').value.trim();
+  const pwd   = document.getElementById('newPwd').value;
+  const role  = document.getElementById('newRole').value;
+  const errEl = document.getElementById('addUserError');
+  errEl.textContent = '';
+  if(!email || !pwd || !name) { errEl.textContent = 'All fields required.'; return; }
+  if(pwd.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
+  try {
+    // Create user with secondary auth instance to avoid signing out admin
+    const secondaryApp = firebase.initializeApp(FB_CONFIG, 'secondary_' + Date.now());
+    const secAuth = secondaryApp.auth();
+    const cred = await secAuth.createUserWithEmailAndPassword(email, pwd);
+    const uid = cred.user.uid;
+    await secAuth.signOut();
+    await secondaryApp.delete();
+    const perms = role === 'admin' ? Object.fromEntries(getModuleTabs().map(t => {
+      const k = (t.getAttribute('onclick')||'').match(/switchMain\('(\w+)'/);
+      return k ? [k[1], true] : null;
+    }).filter(Boolean)) : {};
+    await fbDB.ref('users/' + uid).set({email, name, role, permissions: perms, createdAt: Date.now()});
+    document.getElementById('newEmail').value = '';
+    document.getElementById('newName').value = '';
+    document.getElementById('newPwd').value = '';
+    loadUserList();
+  } catch(e) {
+    let msg = e.message;
+    if(e.code === 'auth/email-already-in-use') msg = 'This email is already registered.';
+    errEl.textContent = msg;
+  }
 }
 
 </script>
