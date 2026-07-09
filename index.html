@@ -1596,10 +1596,11 @@ function liveProcessLog(logRaw) {
     const pend=tot-del, rto=sub.filter(r=>isRTO(liveSV(r[7]||''))).length, oth=pend-rto;
     const fts=sub.map(r=>liveFV(r[5]||0));
     const ft=Math.round(fts.reduce((s,v)=>s+v,0)*100)/100;
-    const fa=tot>0?Math.round(ft/tot*100)/100:0;
+    const fOrders=fts.filter(v=>v>0).length; const fa=fOrders>0?
+    Math.round(ft/fOrders*100)/100:0;
     const sc={};sub.forEach(r=>{const s=liveSV(r[7]||'');if(s)sc[s]=(sc[s]||0)+1;});
     const dm={};sub.forEach(r=>{const d=normMo(r[9]||'');if(d&&d!=='N/A'&&isDel(liveSV(r[7]||'')))dm[d]=(dm[d]||0)+1;});
-    return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,status_counts:sc,deliv_by_month:dm};
+    return{total:tot,delivered:del,pending:pend,rto,others:oth,freight_total:ft,freight_avg:fa,freight_orders:fOrders,status_counts:sc,deliv_by_month:dm};
   }
   const lookup={};
   ['','Delivered','Pending','RTO','Others'].forEach(sg=>{
@@ -2638,7 +2639,7 @@ var LOGISTICS = {"lookup":{"|":{"total":416,"delivered":240,"pending":176,"rto":
 let logMo    = '';   // '' = All months
 let logStatus = '';  // '' = All, 'Delivered', 'Pending', 'RTO', 'Others'
 
-function logKey(mo, sg){ return `${mo||''}|${sg||''}`; }
+function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,freight_orders:0,status_counts:{},deliv_by_month:{}}; } return `${mo||''}|${sg||''}`; }
 function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,status_counts:{},deliv_by_month:{}}; }
 
 // ── Filter Bar ──
