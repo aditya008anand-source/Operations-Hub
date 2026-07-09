@@ -2639,9 +2639,8 @@ var LOGISTICS = {"lookup":{"|":{"total":416,"delivered":240,"pending":176,"rto":
 let logMo    = '';   // '' = All months
 let logStatus = '';  // '' = All, 'Delivered', 'Pending', 'RTO', 'Others'
 
-function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,freight_orders:0,status_counts:{},deliv_by_month:{}}; } return `${mo||''}|${sg||''}`; }
-function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,status_counts:{},deliv_by_month:{}}; }
-
+function logKey(mo, sg){ return `${mo||''}|${sg||''}`; }
+function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,delivered:0,pending:0,rto:0,others:0,freight_total:0,freight_avg:0,freight_orders:0,status_counts:{},deliv_by_month:{}}; }
 // ── Filter Bar ──
 function logFilterBar(){
   const SG = ['Delivered','Pending','RTO','Others'];
