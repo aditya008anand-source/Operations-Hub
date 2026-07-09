@@ -1177,61 +1177,86 @@ function buildMSEngage(){
   return `
   <div class="page-header">
     <div class="page-title">💊 Mysaathi — Patient Engagement</div>
-    <div class="page-sub">Active patients · Diet & Physio sessions</div>
+    <div class="page-sub">Coach sessions · Nutritionist & Physiotherapist</div>
   </div>
-  ${msFilterBar()}
   <div class="kpi-grid" id="ms_eng_kpis"></div>
   <div class="ms-tabs">
-    <button class="ms-tab ${msEngTab==='diet'?'active':''}" onclick="setMSEngTab('diet')">🥗 Diet</button>
-    <button class="ms-tab ${msEngTab==='physio'?'active':''}" onclick="setMSEngTab('physio')">🏃 Physio</button>
+    <button class="ms-tab ${msEngTab==='all'?'active':''}" onclick="setMSEngTab('all')">👥 All Coaches</button>
+    <button class="ms-tab ${msEngTab==='diet'?'active':''}" onclick="setMSEngTab('diet')">🥗 Nutritionist</button>
+    <button class="ms-tab ${msEngTab==='physio'?'active':''}" onclick="setMSEngTab('physio')">🏃 Physiotherapist</button>
   </div>
   <div id="ms_eng_body"></div>`;
 }
 function setMSEngTab(t){msEngTab=t;renderMSContent();}
-function initMSEngage(){
-  const rows=msFilteredRows();
-  const active=rows.filter(r=>r.is_active===true);
-  const inactive=rows.filter(r=>r.is_active!==true);
-  const n=rows.length;
+
+const COACH_COMPLETED='Consultation Finished';
+function coachStats(rows){
+  const done=rows.filter(r=>r.status===COACH_COMPLETED);
+  return {
+    sessions:     rows.length,
+    uniqBooked:   new Set(rows.map(r=>r.contact)).size,
+    compSessions: done.length,
+    uniqComp:     new Set(done.map(r=>r.contact)).size
+  };
+}
+function coachCohort(rows){
+  const per={};
+  rows.filter(r=>r.status===COACH_COMPLETED).forEach(r=>{per[r.contact]=(per[r.contact]||0)+1;});
+  const c={};
+  Object.values(per).forEach(v=>{const k=v>=6?'6+':String(v);c[k]=(c[k]||0)+1;});
+  return c;
+}
+
+async function initMSEngage(){
+  const body=document.getElementById('ms_eng_body');
+  if(!COACH_DATA){
+    if(body)body.innerHTML='<div style="padding:30px;color:var(--muted)">Loading coach sessions…</div>';
+    await loadCoachData();
+  }
+  const all=COACH_DATA||[];
+  const nut=all.filter(r=>r.coach==='Nutritionist');
+  const phy=all.filter(r=>r.coach==='Physiotherapist');
+  const sAll=coachStats(all);
+
   const el=document.getElementById('ms_eng_kpis');
   if(el)el.innerHTML=`
-    <div class="kpi" style="--kc:var(--ok)"><div class="kpi-lbl">Active Patients</div><div class="kpi-val">${active.length}</div><div class="kpi-sub">Plan active</div></div>
-    <div class="kpi" style="--kc:var(--danger)"><div class="kpi-lbl">Inactive / Expired</div><div class="kpi-val">${inactive.length}</div></div>
-    <div class="kpi" style="--kc:var(--brand)"><div class="kpi-lbl">Total Patients</div><div class="kpi-val">${n}</div></div>
+    <div class="kpi" style="--kc:var(--brand)"><div class="kpi-lbl">Sessions Booked</div><div class="kpi-val">${sAll.sessions}</div><div class="kpi-sub">all coaches</div></div>
+    <div class="kpi" style="--kc:#0ea5e9"><div class="kpi-lbl">Unique Patients Booked</div><div class="kpi-val">${sAll.uniqBooked}</div><div class="kpi-sub">distinct patients</div></div>
+    <div class="kpi" style="--kc:var(--ok)"><div class="kpi-lbl">Sessions Completed</div><div class="kpi-val">${sAll.compSessions}</div><div class="kpi-sub">${sAll.sessions>0?(sAll.compSessions/sAll.sessions*100).toFixed(1)+'% rate':'—'}</div></div>
+    <div class="kpi" style="--kc:#a855f7"><div class="kpi-lbl">Unique Patients Completed</div><div class="kpi-val">${sAll.uniqComp}</div><div class="kpi-sub">${sAll.uniqBooked>0?(sAll.uniqComp/sAll.uniqBooked*100).toFixed(1)+'% of booked':'—'}</div></div>
   `;
-  const isD=msEngTab==='diet';
-  const bookKey=isD?'diet_book':'phys_book';
-  const compKey=isD?'diet_comp':'phys_comp';
-  const label=isD?'Diet':'Physio';
-  const icon=isD?'🥗':'🏃';
-  const totBook=rows.reduce((s,r)=>s+r[bookKey],0);
-  const totComp=rows.reduce((s,r)=>s+r[compKey],0);
-  const actBook=active.reduce((s,r)=>s+r[bookKey],0);
-  const actComp=active.reduce((s,r)=>s+r[compKey],0);
-  const cohort={};
-  rows.forEach(r=>{const v=r[compKey];if(v>0){const k=v>=6?'6+':String(v);cohort[k]=(cohort[k]||0)+1;}});
+
+  const isAll=msEngTab==='all', isD=msEngTab==='diet';
+  const rows = isAll?all:(isD?nut:phy);
+  const label= isAll?'All Coaches':(isD?'Nutritionist':'Physiotherapist');
+  const icon = isAll?'👥':(isD?'🥗':'🏃');
+  const col  = isAll?'rgba(168,85,247,.8)':(isD?'rgba(34,197,94,.8)':'rgba(14,165,233,.8)');
+  const s=coachStats(rows);
+
+  const coh=coachCohort(rows);
   const cohortKeys=['1','2','3','4','5','6+'];
-  const maxCoh=Math.max(...cohortKeys.map(k=>cohort[k]||0),1);
+  const maxCoh=Math.max(...cohortKeys.map(k=>coh[k]||0),1);
   const cohortHTML=cohortKeys.map(k=>{
-    const v=cohort[k]||0;const w=Math.round(v/maxCoh*100);
+    const v=coh[k]||0;const w=Math.round(v/maxCoh*100);
     return `<div class="cohort-bar-row">
       <div class="cohort-bar-label">${k} session${k==='1'?'':'s'}</div>
-      <div class="cohort-bar-track"><div class="cohort-bar-fill" style="width:${w}%;background:${isD?'rgba(34,197,94,.8)':'rgba(14,165,233,.8)'}"></div></div>
+      <div class="cohort-bar-track"><div class="cohort-bar-fill" style="width:${w}%;background:${col}"></div></div>
       <div class="cohort-bar-count">${v}</div>
     </div>`;
   }).join('');
-  document.getElementById('ms_eng_body').innerHTML=`
+
+  if(body)body.innerHTML=`
   <div class="cg cg2" style="margin-bottom:20px">
     <div class="cc">
-      <div class="cc-hdr"><div class="cc-title">${icon} ${label} — Overall</div></div>
+      <div class="cc-hdr"><div class="cc-title">${icon} ${label}</div></div>
       <div class="stat-row">
-        <div class="stat-box"><div class="stat-box-label">Total Bookings</div><div class="stat-box-val">${totBook}</div><div class="stat-box-sub">all patients</div></div>
-        <div class="stat-box"><div class="stat-box-label">Total Completions</div><div class="stat-box-val">${totComp}</div><div class="stat-box-sub">${totBook>0?(totComp/totBook*100).toFixed(1)+'% rate':'—'}</div></div>
+        <div class="stat-box"><div class="stat-box-label">Sessions Booked</div><div class="stat-box-val">${s.sessions}</div><div class="stat-box-sub">all rows</div></div>
+        <div class="stat-box"><div class="stat-box-label">Sessions Completed</div><div class="stat-box-val">${s.compSessions}</div><div class="stat-box-sub">${s.sessions>0?(s.compSessions/s.sessions*100).toFixed(1)+'% rate':'—'}</div></div>
       </div>
-      <div class="cc-hdr" style="margin-top:12px"><div class="cc-title">Active Patients Only</div></div>
+      <div class="cc-hdr" style="margin-top:12px"><div class="cc-title">Unique Patients</div></div>
       <div class="stat-row">
-        <div class="stat-box"><div class="stat-box-label">Active Bookings</div><div class="stat-box-val">${actBook}</div></div>
-        <div class="stat-box"><div class="stat-box-label">Active Completions</div><div class="stat-box-val">${actComp}</div><div class="stat-box-sub">${actBook>0?(actComp/actBook*100).toFixed(1)+'% rate':'—'}</div></div>
+        <div class="stat-box"><div class="stat-box-label">Booked</div><div class="stat-box-val">${s.uniqBooked}</div><div class="stat-box-sub">distinct</div></div>
+        <div class="stat-box"><div class="stat-box-label">Completed</div><div class="stat-box-val">${s.uniqComp}</div><div class="stat-box-sub">${s.uniqBooked>0?(s.uniqComp/s.uniqBooked*100).toFixed(1)+'% of booked':'—'}</div></div>
       </div>
     </div>
     <div class="cc">
@@ -1240,12 +1265,13 @@ function initMSEngage(){
       <div class="cw h180" style="margin-top:14px"><canvas id="ms_eng_chart"></canvas></div>
     </div>
   </div>`;
-  const engLabels=['Overall Book','Overall Comp','Active Book','Active Comp'];
-  const engVals=[totBook,totComp,actBook,actComp];
-  const engColors=isD
-    ?['rgba(34,197,94,.8)','rgba(34,197,94,.5)','rgba(14,165,233,.8)','rgba(14,165,233,.5)']
-    :['rgba(14,165,233,.8)','rgba(14,165,233,.5)','rgba(168,85,247,.8)','rgba(168,85,247,.5)'];
-  try{bar('ms_eng_chart',engLabels,[{label:label+' Sessions',data:engVals,backgroundColor:engColors,borderRadius:5}]);}catch(e){}
+
+  try{
+    bar('ms_eng_chart',
+      ['Sessions Booked','Sessions Completed','Uniq Booked','Uniq Completed'],
+      [{label:label,data:[s.sessions,s.compSessions,s.uniqBooked,s.uniqComp],
+        backgroundColor:[col,col.replace('.8','.5'),'rgba(100,116,139,.8)','rgba(100,116,139,.5)'],borderRadius:5}]);
+  }catch(e){}
 }
 
 // ── KIT DISPATCH — Column M only ──
@@ -1364,6 +1390,7 @@ const LIVE_URLS = {
   ms:    LIVE_SHEET_BASE + "?gid=1310523268&single=true&output=csv",
   mslog: LIVE_SHEET_BASE + "?gid=1879543153&single=true&output=csv",
   diag:  LIVE_SHEET_BASE + "?gid=78694225&single=true&output=csv",
+  coach: LIVE_SHEET_BASE + "?gid=419247046&single=true&output=csv",
 };
 
 // ── CSV Parser → returns array of arrays (raw rows) ──
@@ -1384,6 +1411,45 @@ function liveParseCSVRaw(text) {
 function liveIV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
 function liveFV(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function liveSV(v) { const s = String(v||'').trim(); return ['None','nan','#N/A','#VALUE!',''].includes(s) ? '' : s; }
+  // ── Coach Sessions (separate GID) ──
+let COACH_DATA = null;
+
+function coachProcess(raw){
+  if(!raw || raw.length < 2) return [];
+  const hdr = raw[0].map(h => String(h||'').trim().toLowerCase());
+  const ix = n => hdr.indexOf(n);
+  const iName=ix('name'), iContact=ix('contact_no'), iCity=ix('city'),
+        iProg=ix('support_program_type'), iType=ix('consultation_type'),
+        iStat=ix('appointment_status'), iDate=ix('consultation_booked_date');
+  const out=[];
+  for(let i=1;i<raw.length;i++){
+    const r=raw[i]; if(!r) continue;
+    const contact = liveSV(r[iContact]);
+    if(!contact) continue;
+    out.push({
+      name:    liveSV(r[iName]),
+      contact: contact,
+      city:    liveSV(r[iCity]),
+      program: liveSV(r[iProg]),
+      coach:   liveSV(r[iType]),
+      status:  liveSV(r[iStat]),
+      date:    liveSV(r[iDate])
+    });
+  }
+  return out;
+}
+
+async function loadCoachData(){
+  try{
+    const res = await fetch(LIVE_URLS.coach);
+    if(!res.ok) throw new Error('Coach fetch failed: ' + res.status);
+    COACH_DATA = coachProcess(liveParseCSVRaw(await res.text()));
+  }catch(e){
+    console.warn('coach data load failed', e);
+    COACH_DATA = COACH_DATA || [];
+  }
+  return COACH_DATA;
+}
 
 // ── AM normalisers ──
 const L_TP_AM = {'aditya':'Aditya Kumar','aditya kumar':'Aditya Kumar','amit kumar rai':'Amit Kumar Rai','amit rai':'Amit Kumar Rai','amit kumar rai':'Amit Kumar Rai','ashish rana':'Ashish Rana','niket':'Niket','niket pathak':'Niket','rafi':'Rafi','rafi khan':'Rafi','shivam ratkal':'Shivam Ratkal'};
