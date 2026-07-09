@@ -2644,17 +2644,14 @@ function logGet(mo, sg){ return LOGISTICS.lookup[logKey(mo, sg)] || {total:0,del
 
 // ── Filter Bar ──
 function logFilterBar(){
-  const moOpts = LOGISTICS.months.map(m => `<option value="${m}" ${logMo===m?'selected':''}>${m}</option>`).join('');
-  const sgDefs = [
-    {val:'',         label:'All'},
-    {val:'Delivered',label:'Delivered'},
-    {val:'Pending',  label:'Pending'},
-    {val:'RTO',      label:'RTO'},
-    {val:'Others',   label:'Others'},
-  ];
-  const sgBtns = sgDefs.map(s =>
-    `<button class="cgm-tog ${logStatus===s.val?'active':''}" onclick="setLogFilter('status','${s.val}')">${s.label}</button>`
-  ).join('');
+  const SG = ['Delivered','Pending','RTO','Others'];
+  const months   = LOGISTICS.months.filter(m => logGet(m, logStatus).total > 0 || m === logMo);
+  const statuses = SG.filter(s => logGet(logMo, s).total > 0 || s === logStatus);
+
+  const moOpts = months.map(m => `<option value="${m}" ${logMo===m?'selected':''}>${m}</option>`).join('');
+  const stOpts = statuses.map(s => `<option value="${s}" ${logStatus===s?'selected':''}>${s}</option>`).join('');
+  const any = logMo || logStatus;
+
   return `<div class="cgm-filter-bar" style="flex-wrap:wrap;gap:16px">
     <div class="cfb-group">
       <span class="cfb-label">📅 Month</span>
@@ -2666,19 +2663,20 @@ function logFilterBar(){
     <div class="cfb-divider"></div>
     <div class="cfb-group">
       <span class="cfb-label">📦 Status</span>
-      ${sgBtns}
+      <select class="month-select" onchange="setLogFilter('status',this.value)">
+        <option value="" ${!logStatus?'selected':''}>All Statuses</option>
+        ${stOpts}
+      </select>
     </div>
-    <div class="cfb-divider"></div>
-    <button class="cfb-reset" onclick="resetLogFilters()">↺ Reset</button>
+    ${any?`<div class="cfb-divider"></div><button class="cfb-reset" onclick="resetLogFilters()">↺ Reset</button>`:''}
   </div>`;
 }
 function setLogFilter(key, val){
   if(key==='mo') logMo=val;
-  else if(key==='status') logStatus=(logStatus===val&&val!=='')?'':val;
+  else if(key==='status') logStatus=val;
   renderMSContent();
 }
 function resetLogFilters(){ logMo=''; logStatus=''; renderMSContent(); }
-
 // ── Build Logistics view ──
 function buildMSLog(){
   return `
