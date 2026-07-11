@@ -1257,7 +1257,7 @@ function hoCompute(){
   const byp={};rows.forEach(r=>{(byp[r.pid]=byp[r.pid]||[]).push(r);});
   let readings=0;const users=new Set();const cohort=new Set(),drop=new Set();
   const mob={};const rpmMonths={};const rpmCount={};
-  const met={w:[0,0,0],bmi:[0,0,0],body_fat:[0,0,0],fat_mass:[0,0,0]};
+  const met={w:[0,0,[]],bmi:[0,0,[]],body_fat:[0,0,[]],fat_mass:[0,0,[]]};
   Object.keys(byp).forEach(pid=>{
     readings+=byp[pid].length;
     byp[pid].forEach(r=>{if(r.contact)users.add(r.contact);if(r.d){const k=r.d.getFullYear()+'-'+r.d.getMonth();(rpmMonths[pid]=rpmMonths[pid]||new Set()).add(k);rpmCount[pid]=(rpmCount[pid]||0)+1;}});
@@ -1266,7 +1266,7 @@ function hoCompute(){
     const ph=cl[0].contact;cohort.add(ph);if(cl[cl.length-1].w-cl[0].w<-0.1)drop.add(ph);
     const bd=cl[0].d,bw=cl[0].w;
     cl.forEach(r=>{const mi=Math.floor((r.d-bd)/HO_DAY/30);(mob[mi]=mob[mi]||[]).push(r.w-bw);});
-    [['w',true],['bmi',true],['body_fat',true],['fat_mass',true]].forEach(([m,lb])=>{const f=cl.filter(r=>r[m]&&r[m]>0);if(f.length>=2){const ch=f[f.length-1][m]-f[0][m];met[m][1]++;met[m][2]+=ch;if((ch<0&&lb)||(ch>0&&!lb))met[m][0]++;}});
+    [['w',true],['bmi',true],['body_fat',true],['fat_mass',true]].forEach(([m,lb])=>{const f=cl.filter(r=>r[m]&&r[m]>0);if(f.length>=2){const ch=f[f.length-1][m]-f[0][m];met[m][1]++;met[m][2].push(ch);if((ch<0&&lb)||(ch>0&&!lb))met[m][0]++;}});
   });
   let rpmSum=0,rpmN=0;Object.keys(rpmCount).forEach(pid=>{const mn=(rpmMonths[pid]||new Set()).size||1;rpmSum+=rpmCount[pid]/mn;rpmN++;});
   const avgPerMonth=rpmN?rpmSum/rpmN:0;
@@ -1285,7 +1285,8 @@ function hoCompute(){
   const noCc=[...cohort].filter(x=>!cdone.has(x)).length,noCd=[...drop].filter(x=>!cdone.has(x)).length;
   const momK=Object.keys(mob).map(Number).sort((a,b)=>a-b).slice(0,6);
   const mom=momK.map(k=>({label:'M'+k,avg:mob[k].reduce((s,v)=>s+v,0)/mob[k].length,n:mob[k].length}));
-  const metrics=[['w','Weight (kg)'],['bmi','BMI'],['body_fat','Body fat %'],['fat_mass','Fat mass (kg)']].map(([m,lbl])=>({label:lbl,imp:met[m][0],tot:met[m][1],avg:met[m][1]?met[m][2]/met[m][1]:0}));
+  const hoMed=a=>{if(!a.length)return 0;const s=a.slice().sort((x,y)=>x-y);const n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;};
+  const metrics=[['w','Weight (kg)'],['bmi','BMI'],['body_fat','Body fat %'],['fat_mass','Fat mass (kg)']].map(([m,lbl])=>({label:lbl,imp:met[m][0],tot:met[m][1],avg:hoMed(met[m][2])}));
   return {readings,users:users.size,avgPerMonth,weekly,
     funnel:{completed:compl.size,consulted:s2.size,monitored:s3c,drop:s3d},
     compare:{withC:[s3d,s3c],all:[drop.size,cohort.size],noC:[noCd,noCc]},mom,metrics};
@@ -1310,13 +1311,14 @@ async function initHealthOutcomes(){
   const metRow=m=>{const p=pct(m.imp,m.tot);return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
     <div style="width:130px;flex-shrink:0;font-size:13px">${m.label}</div>
     <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:22px"><div style="width:${p}%;height:22px;background:rgba(29,158,117,.85);border-radius:6px"></div></div>
-    <div style="width:150px;text-align:right;font-size:13px;font-weight:600">${p}% improved <span style="color:var(--muted);font-weight:400">· avg ${m.avg>0?'+':''}${m.avg.toFixed(2)}</span></div></div>`;};
+    <div style="width:150px;text-align:right;font-size:13px;font-weight:600">${p}% improved <span style="color:var(--muted);font-weight:400">· median ${m.avg>0?'+':''}${m.avg.toFixed(2)}</span></div></div>`;};
 
   if(body)body.innerHTML=`
   <div class="ms-filter-bar" style="margin-bottom:16px">
     <div class="ms-filter-group"><span class="ms-filter-label">🩺 Programme</span>
       <select class="ms-select" onchange="setHOProgram(this.value)"><option value="">All Programmes</option>${progOpts}</select></div>
     ${hoProgram?`<button class="ms-reset" onclick="setHOProgram('')">↺ Reset</button>`:''}
+    <button class="ms-reset" onclick="hoDownloadReport()" style="margin-left:auto">⬇ Download report</button>
   </div>
   <div class="kpi-grid" style="margin-bottom:20px">
     <div class="kpi" style="--kc:var(--brand)"><div class="kpi-lbl">Total BCA readings</div><div class="kpi-val">${d.readings.toLocaleString()}</div><div class="kpi-sub">synced</div></div>
@@ -1357,6 +1359,36 @@ async function initHealthOutcomes(){
     {label:'Returning',data:d.weekly.map(w=>w.ret),borderColor:'#0ea5e9',backgroundColor:'rgba(14,165,233,.08)',tension:.3,fill:true,borderDash:[5,4]}]);}catch(e){}
   try{bar('ho_mom',d.mom.map(m=>m.label),[
     {label:'Avg weight change (kg)',data:d.mom.map(m=>+m.avg.toFixed(2)),backgroundColor:'rgba(29,158,117,.8)',borderRadius:5}]);}catch(e){}
+}
+function hoDownloadReport(){
+  const d=hoCompute();
+  const p=(a,b)=>b>0?Math.round(a/b*100):0;
+  const prog=hoProgram?((HO_PROGS.find(x=>x.key===hoProgram)||{}).name||hoProgram):'All Programmes';
+  const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const L=[];
+  L.push(['TatvaCare — MySaathi Health Outcomes']);
+  L.push(['Programme',prog]);L.push(['Generated',new Date().toLocaleString()]);L.push([]);
+  L.push(['USAGE']);
+  L.push(['Total BCA readings',d.readings]);L.push(['Unique users',d.users]);
+  L.push(['Readings per user per month',d.avgPerMonth.toFixed(1)]);L.push(['Monitored patients',d.compare.all[1]]);L.push([]);
+  L.push(['WEIGHT-LOSS FUNNEL','Count','% of previous']);
+  L.push(['Completed patients',d.funnel.completed,'100%']);
+  L.push(['Finished a consultation',d.funnel.consulted,p(d.funnel.consulted,d.funnel.completed)+'%']);
+  L.push(['Usable BCA monitoring',d.funnel.monitored,p(d.funnel.monitored,d.funnel.consulted)+'%']);
+  L.push(['Saw a weight drop',d.funnel.drop,p(d.funnel.drop,d.funnel.monitored)+'%']);L.push([]);
+  L.push(['CONSULTATION VS OVERALL','% lost weight','Patients']);
+  L.push(['With consultation',p(d.compare.withC[0],d.compare.withC[1])+'%',d.compare.withC[0]+'/'+d.compare.withC[1]]);
+  L.push(['Without consultation',p(d.compare.noC[0],d.compare.noC[1])+'%',d.compare.noC[0]+'/'+d.compare.noC[1]]);
+  L.push(['All BCA patients',p(d.compare.all[0],d.compare.all[1])+'%',d.compare.all[0]+'/'+d.compare.all[1]]);L.push([]);
+  L.push(['WEIGHT CHANGE MONTH-ON-MONTH','Avg change (kg)']);
+  d.mom.forEach(m=>L.push(['Month '+m.label.slice(1),m.avg.toFixed(2)]));L.push([]);
+  L.push(['BODY-COMPOSITION IMPROVEMENT','% improved','Median change']);
+  d.metrics.forEach(m=>L.push([m.label,p(m.imp,m.tot)+'%',(m.avg>0?'+':'')+m.avg.toFixed(2)]));
+  const csv=L.map(r=>r.map(q).join(',')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='MySaathi_Health_Outcomes_'+(hoProgram||'All')+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function setHOProgram(v){hoProgram=v;initHealthOutcomes();}
 
