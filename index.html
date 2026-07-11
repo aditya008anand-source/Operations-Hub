@@ -1222,9 +1222,9 @@ function setMSEngTab(t){msEngTab=t;renderMSContent();}
 let hoProgram='';
 let HO_BCA=null, HO_MSANY=null, HO_MSPROG=null, HO_CANY=null, HO_CPROG=null;
 const HO_PROGS=[
-  {key:'Diabetes',bca:'Diabetes',drug:'semaglyn',coach:'SEMAGLYN'},
-  {key:'Fatty Liver - NASH',bca:'Fatty Liver - NASH',drug:'mashema',coach:'MASHEMA'},
-  {key:'PCOS',bca:'PCOS',drug:'alterme',coach:'ALTERME'}
+  {key:'Diabetes',name:'Semaglyn',bca:'Diabetes',drug:'semaglyn',coach:'SEMAGLYN'},
+  {key:'Fatty Liver - NASH',name:'Mashema',bca:'Fatty Liver - NASH',drug:'mashema',coach:'MASHEMA'},
+  {key:'PCOS',name:'Alterme',bca:'PCOS',drug:'alterme',coach:'ALTERME'}
 ];
 const HO_DAY=86400000;
 function hoNorm(p){const d=String(p==null?'':p).replace(/\D/g,'');return d.length>=10?d.slice(-10):'';}
@@ -1297,16 +1297,16 @@ async function initHealthOutcomes(){
   if(!HO_BCA){if(body)body.innerHTML='<div style="padding:30px;color:var(--muted)">Loading health outcomes…</div>';await hoLoadData();}
   const d=hoCompute();
   const pct=(a,b)=>b>0?Math.round(a/b*100):0;
-  const progOpts=HO_PROGS.map(p=>`<option value="${p.key}" ${hoProgram===p.key?'selected':''}>${p.key}</option>`).join('');
+  const progOpts=HO_PROGS.map(p=>`<option value="${p.key}" ${hoProgram===p.key?'selected':''}>${p.name}</option>`).join('');
   const fw=n=>n<=0?0:Math.max(9,Math.round(n/Math.max(d.funnel.completed,1)*100));
-  const fRow=(lbl,sub,n,c)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
+  const fRow=(lbl,sub,n,c,pc)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
     <div style="width:180px;flex-shrink:0"><div style="font-size:13px;color:var(--text)">${lbl}</div><div style="font-size:11px;color:var(--muted)">${sub}</div></div>
     <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:32px"><div style="width:${fw(n)}%;min-width:42px;height:32px;background:${c};border-radius:6px"></div></div>
-    <div style="width:56px;text-align:right;font-size:17px;font-weight:600">${n.toLocaleString()}</div></div>`;
+    <div style="width:118px;text-align:right;white-space:nowrap"><span style="font-size:17px;font-weight:600">${n.toLocaleString()}</span> <span style="font-size:12px;color:var(--muted)">${pc}</span></div></div>`;
   const cmpRow=(lbl,a,b,c)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:11px">
     <div style="width:150px;flex-shrink:0;font-size:13px">${lbl}</div>
-    <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:24px"><div style="width:${pct(a,b)}%;height:24px;background:${c};border-radius:6px"></div></div>
-    <div style="width:78px;text-align:right;font-size:14px;font-weight:600">${pct(a,b)}% <span style="color:var(--muted);font-size:11px">${a}/${b}</span></div></div>`;
+    <div style="width:200px;flex-shrink:0;background:var(--bg2,#f1f5f9);border-radius:6px;height:24px"><div style="width:${pct(a,b)}%;height:24px;background:${c};border-radius:6px"></div></div>
+    <div style="font-size:14px;font-weight:600;white-space:nowrap">${pct(a,b)}% <span style="color:var(--muted);font-size:11px">${a.toLocaleString()}/${b.toLocaleString()}</span></div></div>`;
   const metRow=m=>{const p=pct(m.imp,m.tot);return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
     <div style="width:130px;flex-shrink:0;font-size:13px">${m.label}</div>
     <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:22px"><div style="width:${p}%;height:22px;background:rgba(29,158,117,.85);border-radius:6px"></div></div>
@@ -1330,10 +1330,10 @@ async function initHealthOutcomes(){
   </div>
   <div class="cc" style="margin-bottom:20px">
     <div class="cc-hdr"><div class="cc-title">🎯 Weight-loss funnel</div><div class="cc-sub">consultation path</div></div>
-    ${fRow('Completed patients','every completed status',d.funnel.completed,'#1D9E75')}
-    ${fRow('Finished a consultation','of completed',d.funnel.consulted,'#0F6E56')}
-    ${fRow('Usable BCA monitoring','≥2 readings, ≥14 days',d.funnel.monitored,'#085041')}
-    ${fRow('Saw a weight drop',pct(d.funnel.drop,d.funnel.monitored)+'% of monitored',d.funnel.drop,'#04342C')}
+    ${fRow('Completed patients','every completed status',d.funnel.completed,'#1D9E75','100%')}
+    ${fRow('Finished a consultation','of completed',d.funnel.consulted,'#0F6E56',pct(d.funnel.consulted,d.funnel.completed)+'%')}
+    ${fRow('Usable BCA monitoring','of consulted',d.funnel.monitored,'#085041',pct(d.funnel.monitored,d.funnel.consulted)+'%')}
+    ${fRow('Saw a weight drop','of monitored',d.funnel.drop,'#04342C',pct(d.funnel.drop,d.funnel.monitored)+'%')}
   </div>
   <div class="cc" style="margin-bottom:20px">
     <div class="cc-hdr"><div class="cc-title">Does consultation help weight loss?</div><div class="cc-sub">share of monitored patients who lost weight</div></div>
