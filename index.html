@@ -1210,10 +1210,154 @@ function buildMSEngage(){
     <button class="ms-tab ${msEngTab==='all'?'active':''}" onclick="setMSEngTab('all')">👥 All Coaches</button>
     <button class="ms-tab ${msEngTab==='diet'?'active':''}" onclick="setMSEngTab('diet')">🥗 Nutritionist</button>
     <button class="ms-tab ${msEngTab==='physio'?'active':''}" onclick="setMSEngTab('physio')">🏃 Physiotherapist</button>
+    <button class="ms-tab ${msEngTab==='health'?'active':''}" onclick="setMSEngTab('health')">🎯 Health Outcomes</button>
   </div>
   <div id="ms_eng_body"></div>`;
 }
 function setMSEngTab(t){msEngTab=t;renderMSContent();}
+
+// ══════════════════════════════════════════════════
+// HEALTH OUTCOMES (BCA) — Mysaathi › Patient Engagement
+// ══════════════════════════════════════════════════
+let hoProgram='';
+let HO_BCA=null, HO_MSANY=null, HO_MSPROG=null, HO_CANY=null, HO_CPROG=null;
+const HO_PROGS=[
+  {key:'Diabetes',bca:'Diabetes',drug:'semaglyn',coach:'SEMAGLYN'},
+  {key:'Fatty Liver - NASH',bca:'Fatty Liver - NASH',drug:'mashema',coach:'MASHEMA'},
+  {key:'PCOS',bca:'PCOS',drug:'alterme',coach:'ALTERME'}
+];
+const HO_DAY=86400000;
+function hoNorm(p){const d=String(p==null?'':p).replace(/\D/g,'');return d.length>=10?d.slice(-10):'';}
+function hoNum(x){const v=parseFloat(String(x==null?'':x).replace(/,/g,'').trim());return isFinite(v)?v:null;}
+function hoDate(s){s=String(s||'').trim();if(!s)return null;const d=new Date(s);return isNaN(d.getTime())?null:d;}
+function hoParseBCA(raw){const out=[];for(let i=1;i<raw.length;i++){const r=raw[i];if(!r||r.length<36)continue;const pid=(r[12]||'').trim();if(!pid)continue;
+  out.push({pid,contact:hoNorm(r[11]),disease:(r[13]||'').trim(),d:hoDate(r[15]),w:hoNum(r[18]),bmi:hoNum(r[16]),fat_mass:hoNum(r[21]),muscle_mass:hoNum(r[25]),visceral:hoNum(r[28]),body_fat:hoNum(r[34])});}return out;}
+function hoClean(recs){const ws=recs.map(r=>r.w).filter(w=>w&&w>0).sort((a,b)=>a-b);if(!ws.length)return[];
+  const med=ws.length%2?ws[(ws.length-1)/2]:(ws[ws.length/2-1]+ws[ws.length/2])/2;const lo=med*0.9,hi=med*1.1;
+  return recs.filter(r=>r.w&&r.w>=lo&&r.w<=hi&&r.d).sort((a,b)=>a.d-b.d);}
+
+async function hoLoadData(){
+  try{const res=await withTimeout(fetch(LIVE_URLS.coach),8000);const raw=liveParseCSVRaw(await res.text());
+    HO_BCA=hoParseBCA(raw);
+    const cAny=new Set(),cP={};HO_PROGS.forEach(p=>cP[p.key]=new Set());
+    for(let i=1;i<raw.length;i++){const r=raw[i];if(!r)continue;if((r[5]||'').trim()!=='Consultation Finished')continue;
+      const ph=hoNorm(r[1]);if(!ph)continue;cAny.add(ph);const sp=(r[3]||'').toUpperCase();const pr=HO_PROGS.find(p=>sp.indexOf(p.coach)>=0);if(pr)cP[pr.key].add(ph);}
+    HO_CANY=cAny;HO_CPROG=cP;
+  }catch(e){HO_BCA=HO_BCA||[];HO_CANY=HO_CANY||new Set();HO_CPROG=HO_CPROG||{};}
+  try{const res=await withTimeout(fetch(LIVE_URLS.ms),8000);const raw=liveParseCSVRaw(await res.text());
+    const any=new Set(),bp={};HO_PROGS.forEach(p=>bp[p.key]=new Set());
+    for(let i=1;i<raw.length;i++){const r=raw[i];if(!r)continue;const st=(r[14]||'').toLowerCase();if(st.indexOf('complete')<0)continue;
+      const ph=hoNorm(r[3]);if(!ph)continue;any.add(ph);const drug=(r[7]||'').toLowerCase();const pr=HO_PROGS.find(p=>drug.indexOf(p.drug)>=0);if(pr)bp[pr.key].add(ph);}
+    HO_MSANY=any;HO_MSPROG=bp;
+  }catch(e){HO_MSANY=HO_MSANY||new Set();HO_MSPROG=HO_MSPROG||{};}
+}
+
+function hoCompute(){
+  const rows=(HO_BCA||[]).filter(r=>!hoProgram||r.disease===hoProgram);
+  const byp={};rows.forEach(r=>{(byp[r.pid]=byp[r.pid]||[]).push(r);});
+  let readings=0;const users=new Set();const cohort=new Set(),drop=new Set();
+  const mob={};const rpmMonths={};const rpmCount={};
+  const met={w:[0,0,0],bmi:[0,0,0],body_fat:[0,0,0],fat_mass:[0,0,0]};
+  Object.keys(byp).forEach(pid=>{
+    readings+=byp[pid].length;
+    byp[pid].forEach(r=>{if(r.contact)users.add(r.contact);if(r.d){const k=r.d.getFullYear()+'-'+r.d.getMonth();(rpmMonths[pid]=rpmMonths[pid]||new Set()).add(k);rpmCount[pid]=(rpmCount[pid]||0)+1;}});
+    const cl=hoClean(byp[pid]);if(cl.length<2)return;
+    const span=(cl[cl.length-1].d-cl[0].d)/HO_DAY;if(span<14)return;
+    const ph=cl[0].contact;cohort.add(ph);if(cl[cl.length-1].w-cl[0].w<-0.1)drop.add(ph);
+    const bd=cl[0].d,bw=cl[0].w;
+    cl.forEach(r=>{const mi=Math.floor((r.d-bd)/HO_DAY/30);(mob[mi]=mob[mi]||[]).push(r.w-bw);});
+    [['w',true],['bmi',true],['body_fat',true],['fat_mass',true]].forEach(([m,lb])=>{const f=cl.filter(r=>r[m]&&r[m]>0);if(f.length>=2){const ch=f[f.length-1][m]-f[0][m];met[m][1]++;met[m][2]+=ch;if((ch<0&&lb)||(ch>0&&!lb))met[m][0]++;}});
+  });
+  let rpmSum=0,rpmN=0;Object.keys(rpmCount).forEach(pid=>{const mn=(rpmMonths[pid]||new Set()).size||1;rpmSum+=rpmCount[pid]/mn;rpmN++;});
+  const avgPerMonth=rpmN?rpmSum/rpmN:0;
+  // weekly unique + returning
+  const dated=rows.filter(r=>r.d&&r.contact).sort((a,b)=>a.d-b.d);
+  const seen=new Set();const wk={};
+  dated.forEach(r=>{const d=r.d;const day=(d.getDay()+6)%7;const ws=new Date(d);ws.setHours(0,0,0,0);ws.setDate(ws.getDate()-day);const key=ws.toISOString().slice(0,10);
+    wk[key]=wk[key]||{u:new Set(),ret:new Set()};wk[key].u.add(r.contact);if(seen.has(r.contact))wk[key].ret.add(r.contact);seen.add(r.contact);});
+  const weekKeys=Object.keys(wk).sort();const weekly=weekKeys.slice(-10).map(k=>({wk:k.slice(5),uniq:wk[k].u.size,ret:wk[k].ret.size}));
+  // funnel + compare
+  const compl=hoProgram?(HO_MSPROG[hoProgram]||new Set()):(HO_MSANY||new Set());
+  const cdone=hoProgram?(HO_CPROG[hoProgram]||new Set()):(HO_CANY||new Set());
+  const s2=new Set([...compl].filter(x=>cdone.has(x)));
+  const s3c=[...s2].filter(x=>cohort.has(x)).length;
+  const s3d=[...s2].filter(x=>drop.has(x)).length;
+  const noCc=[...cohort].filter(x=>!cdone.has(x)).length,noCd=[...drop].filter(x=>!cdone.has(x)).length;
+  const momK=Object.keys(mob).map(Number).sort((a,b)=>a-b).slice(0,6);
+  const mom=momK.map(k=>({label:'M'+k,avg:mob[k].reduce((s,v)=>s+v,0)/mob[k].length,n:mob[k].length}));
+  const metrics=[['w','Weight (kg)'],['bmi','BMI'],['body_fat','Body fat %'],['fat_mass','Fat mass (kg)']].map(([m,lbl])=>({label:lbl,imp:met[m][0],tot:met[m][1],avg:met[m][1]?met[m][2]/met[m][1]:0}));
+  return {readings,users:users.size,avgPerMonth,weekly,
+    funnel:{completed:compl.size,consulted:s2.size,monitored:s3c,drop:s3d},
+    compare:{withC:[s3d,s3c],all:[drop.size,cohort.size],noC:[noCd,noCc]},mom,metrics};
+}
+
+async function initHealthOutcomes(){
+  const body=document.getElementById('ms_eng_body');
+  const kp=document.getElementById('ms_eng_kpis');if(kp)kp.innerHTML='';
+  if(!HO_BCA){if(body)body.innerHTML='<div style="padding:30px;color:var(--muted)">Loading health outcomes…</div>';await hoLoadData();}
+  const d=hoCompute();
+  const pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  const progOpts=HO_PROGS.map(p=>`<option value="${p.key}" ${hoProgram===p.key?'selected':''}>${p.key}</option>`).join('');
+  const fw=n=>n<=0?0:Math.max(9,Math.round(n/Math.max(d.funnel.completed,1)*100));
+  const fRow=(lbl,sub,n,c)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
+    <div style="width:180px;flex-shrink:0"><div style="font-size:13px;color:var(--text)">${lbl}</div><div style="font-size:11px;color:var(--muted)">${sub}</div></div>
+    <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:32px"><div style="width:${fw(n)}%;min-width:42px;height:32px;background:${c};border-radius:6px"></div></div>
+    <div style="width:56px;text-align:right;font-size:17px;font-weight:600">${n.toLocaleString()}</div></div>`;
+  const cmpRow=(lbl,a,b,c)=>`<div style="display:flex;align-items:center;gap:12px;margin-bottom:11px">
+    <div style="width:150px;flex-shrink:0;font-size:13px">${lbl}</div>
+    <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:24px"><div style="width:${pct(a,b)}%;height:24px;background:${c};border-radius:6px"></div></div>
+    <div style="width:78px;text-align:right;font-size:14px;font-weight:600">${pct(a,b)}% <span style="color:var(--muted);font-size:11px">${a}/${b}</span></div></div>`;
+  const metRow=m=>{const p=pct(m.imp,m.tot);return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+    <div style="width:130px;flex-shrink:0;font-size:13px">${m.label}</div>
+    <div style="flex:1;background:var(--bg2,#f1f5f9);border-radius:6px;height:22px"><div style="width:${p}%;height:22px;background:rgba(29,158,117,.85);border-radius:6px"></div></div>
+    <div style="width:150px;text-align:right;font-size:13px;font-weight:600">${p}% improved <span style="color:var(--muted);font-weight:400">· avg ${m.avg>0?'+':''}${m.avg.toFixed(2)}</span></div></div>`;};
+
+  if(body)body.innerHTML=`
+  <div class="ms-filter-bar" style="margin-bottom:16px">
+    <div class="ms-filter-group"><span class="ms-filter-label">🩺 Programme</span>
+      <select class="ms-select" onchange="setHOProgram(this.value)"><option value="">All Programmes</option>${progOpts}</select></div>
+    ${hoProgram?`<button class="ms-reset" onclick="setHOProgram('')">↺ Reset</button>`:''}
+  </div>
+  <div class="kpi-grid" style="margin-bottom:20px">
+    <div class="kpi" style="--kc:var(--brand)"><div class="kpi-lbl">Total BCA readings</div><div class="kpi-val">${d.readings.toLocaleString()}</div><div class="kpi-sub">synced</div></div>
+    <div class="kpi" style="--kc:#0ea5e9"><div class="kpi-lbl">Unique users</div><div class="kpi-val">${d.users.toLocaleString()}</div><div class="kpi-sub">by contact no.</div></div>
+    <div class="kpi" style="--kc:#a855f7"><div class="kpi-lbl">Readings / user / month</div><div class="kpi-val">${d.avgPerMonth.toFixed(1)}</div><div class="kpi-sub">average</div></div>
+    <div class="kpi" style="--kc:var(--ok)"><div class="kpi-lbl">Monitored patients</div><div class="kpi-val">${d.compare.all[1].toLocaleString()}</div><div class="kpi-sub">≥2 readings, ≥14 days</div></div>
+  </div>
+  <div class="cc" style="margin-bottom:20px">
+    <div class="cc-hdr"><div class="cc-title">Weekly BCA sync</div><div class="cc-sub">unique vs returning users</div></div>
+    <div class="cw h200"><canvas id="ho_weekly"></canvas></div>
+  </div>
+  <div class="cc" style="margin-bottom:20px">
+    <div class="cc-hdr"><div class="cc-title">🎯 Weight-loss funnel</div><div class="cc-sub">consultation path</div></div>
+    ${fRow('Completed patients','every completed status',d.funnel.completed,'#1D9E75')}
+    ${fRow('Finished a consultation','of completed',d.funnel.consulted,'#0F6E56')}
+    ${fRow('Usable BCA monitoring','≥2 readings, ≥14 days',d.funnel.monitored,'#085041')}
+    ${fRow('Saw a weight drop',pct(d.funnel.drop,d.funnel.monitored)+'% of monitored',d.funnel.drop,'#04342C')}
+  </div>
+  <div class="cc" style="margin-bottom:20px">
+    <div class="cc-hdr"><div class="cc-title">Does consultation help weight loss?</div><div class="cc-sub">share of monitored patients who lost weight</div></div>
+    ${cmpRow('With consultation',d.compare.withC[0],d.compare.withC[1],'#1D9E75')}
+    ${cmpRow('Without consultation',d.compare.noC[0],d.compare.noC[1],'#B4B2A9')}
+    ${cmpRow('All BCA patients',d.compare.all[0],d.compare.all[1],'#888780')}
+  </div>
+  <div class="cc" style="margin-bottom:20px">
+    <div class="cc-hdr"><div class="cc-title">Average weight change month-on-month</div><div class="cc-sub">cumulative from baseline, monitored cohort</div></div>
+    <div class="cw h200"><canvas id="ho_mom"></canvas></div>
+  </div>
+  <div class="cc">
+    <div class="cc-hdr"><div class="cc-title">Body-composition improvement</div><div class="cc-sub">baseline vs latest, monitored cohort</div></div>
+    ${d.metrics.map(metRow).join('')}
+  </div>`;
+
+  try{line('ho_weekly',d.weekly.map(w=>w.wk),[
+    {label:'Unique users',data:d.weekly.map(w=>w.uniq),borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,.1)',tension:.3,fill:true},
+    {label:'Returning',data:d.weekly.map(w=>w.ret),borderColor:'#0ea5e9',backgroundColor:'rgba(14,165,233,.08)',tension:.3,fill:true,borderDash:[5,4]}]);}catch(e){}
+  try{bar('ho_mom',d.mom.map(m=>m.label),[
+    {label:'Avg weight change (kg)',data:d.mom.map(m=>+m.avg.toFixed(2)),backgroundColor:'rgba(29,158,117,.8)',borderRadius:5}]);}catch(e){}
+}
+function setHOProgram(v){hoProgram=v;initHealthOutcomes();}
+
 
 const COACH_COMPLETED='Consultation Finished';
 function coachStats(rows){
@@ -1234,6 +1378,7 @@ function coachCohort(rows){
 }
 
 async function initMSEngage(){
+  if(msEngTab==='health'){ return initHealthOutcomes(); }
   const body=document.getElementById('ms_eng_body');
   if(!COACH_DATA){
     if(body)body.innerHTML='<div style="padding:30px;color:var(--muted)">Loading coach sessions…</div>';
