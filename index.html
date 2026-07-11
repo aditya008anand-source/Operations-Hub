@@ -1237,14 +1237,14 @@ function hoClean(recs){const ws=recs.map(r=>r.w).filter(w=>w&&w>0).sort((a,b)=>a
   return recs.filter(r=>r.w&&r.w>=lo&&r.w<=hi&&r.d).sort((a,b)=>a.d-b.d);}
 
 async function hoLoadData(){
-  try{const res=await withTimeout(fetch(LIVE_URLS.coach),8000);const raw=liveParseCSVRaw(await res.text());
+  try{const res=await fetch(LIVE_URLS.coach);const raw=liveParseCSVRaw(await res.text());
     HO_BCA=hoParseBCA(raw);
     const cAny=new Set(),cP={};HO_PROGS.forEach(p=>cP[p.key]=new Set());
     for(let i=1;i<raw.length;i++){const r=raw[i];if(!r)continue;if((r[5]||'').trim()!=='Consultation Finished')continue;
       const ph=hoNorm(r[1]);if(!ph)continue;cAny.add(ph);const sp=(r[3]||'').toUpperCase();const pr=HO_PROGS.find(p=>sp.indexOf(p.coach)>=0);if(pr)cP[pr.key].add(ph);}
     HO_CANY=cAny;HO_CPROG=cP;
   }catch(e){HO_BCA=HO_BCA||[];HO_CANY=HO_CANY||new Set();HO_CPROG=HO_CPROG||{};}
-  try{const res=await withTimeout(fetch(LIVE_URLS.ms),8000);const raw=liveParseCSVRaw(await res.text());
+  try{const res=await fetch(LIVE_URLS.ms);const raw=liveParseCSVRaw(await res.text());
     const any=new Set(),bp={};HO_PROGS.forEach(p=>bp[p.key]=new Set());
     for(let i=1;i<raw.length;i++){const r=raw[i];if(!r)continue;const st=(r[14]||'').toLowerCase();if(st.indexOf('complete')<0)continue;
       const ph=hoNorm(r[3]);if(!ph)continue;any.add(ph);const drug=(r[7]||'').toLowerCase();const pr=HO_PROGS.find(p=>drug.indexOf(p.drug)>=0);if(pr)bp[pr.key].add(ph);}
