@@ -1335,15 +1335,17 @@ async function initHealthOutcomes(){
     ${fRow('Usable BCA monitoring','of consulted',d.funnel.monitored,'#085041',pct(d.funnel.monitored,d.funnel.consulted)+'%')}
     ${fRow('Saw a weight drop','of monitored',d.funnel.drop,'#04342C',pct(d.funnel.drop,d.funnel.monitored)+'%')}
   </div>
-  <div class="cc" style="margin-bottom:20px">
+  <div class="cg cg2" style="margin-bottom:20px">
+  <div class="cc">
     <div class="cc-hdr"><div class="cc-title">Does consultation help weight loss?</div><div class="cc-sub">share of monitored patients who lost weight</div></div>
     ${cmpRow('With consultation',d.compare.withC[0],d.compare.withC[1],'#1D9E75')}
     ${cmpRow('Without consultation',d.compare.noC[0],d.compare.noC[1],'#B4B2A9')}
     ${cmpRow('All BCA patients',d.compare.all[0],d.compare.all[1],'#888780')}
   </div>
-  <div class="cc" style="margin-bottom:20px">
+  <div class="cc">
     <div class="cc-hdr"><div class="cc-title">Average weight change month-on-month</div><div class="cc-sub">cumulative from baseline, monitored cohort</div></div>
     <div class="cw h200"><canvas id="ho_mom"></canvas></div>
+  </div>
   </div>
   <div class="cc">
     <div class="cc-hdr"><div class="cc-title">Body-composition improvement</div><div class="cc-sub">baseline vs latest, monitored cohort</div></div>
