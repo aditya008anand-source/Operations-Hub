@@ -1064,21 +1064,30 @@ function initPEMgmt(){
 let msView='overview';
 let msEngTab='diet';
 let msMonth='';
+let msDrug='';
+let msStatus='';
 
+function msRowMatch(r, skip){
+  if(skip!=='month'  && msMonth  && r.purchase_month!==msMonth) return false;
+  if(skip!=='drug'   && msDrug   && r.drug!==msDrug)            return false;
+  if(skip!=='status' && msStatus && r.status!==msStatus)        return false;
+  return true;
+}
+function msOptsFor(field, skip){
+  const vals=new Set();
+  MS_RAW.forEach(r=>{ if(msRowMatch(r,skip)){ const v=r[field]; if(v&&v!==''&&v!=='0'&&v!=='—') vals.add(v); } });
+  return [...vals];
+}
+const MS_MONTH_ORDER=['January','February','March','April','May','June','July','August','September','October','November','December','Jan 2026','Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026','Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026'];
 function msGetMonths(){
-  const mo=new Set();
-  MS_RAW.forEach(r=>{if(r.purchase_month&&r.purchase_month!==''&&r.purchase_month!=='0')mo.add(r.purchase_month);});
-  const ORDER=['January','February','March','April','May','June','July','August','September','October','November','December','Jan 2026','Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026','Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026'];
-  const sorted=[...mo].sort((a,b)=>{const ia=ORDER.indexOf(a),ib=ORDER.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});
-  return sorted;
+  return msOptsFor('purchase_month','month').sort((a,b)=>{const ia=MS_MONTH_ORDER.indexOf(a),ib=MS_MONTH_ORDER.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});
 }
+function msGetDrugs(){ return msOptsFor('drug','drug').sort(); }
+function msGetStatuses(){ return msOptsFor('status','status').sort(); }
 function msFilteredRows(){
-  return MS_RAW.filter(r=>{
-    if(msMonth&&r.purchase_month!==msMonth)return false;
-    return true;
-  });
+  return MS_RAW.filter(r=>msRowMatch(r,null));
 }
-function renderMSSidebar(){
+  function renderMSSidebar(){
   document.getElementById('sidebar').innerHTML=`
     <div class="sb-sect">Views</div>
     <button class="sb-btn ${msView==='overview'?'active':''}" onclick="setMSView('overview')"><span class="sb-icon">📊</span>Overview</button>
@@ -1088,8 +1097,10 @@ function renderMSSidebar(){
 }
 function setMSView(v){msView=v;renderMSSidebar();renderMSContent();}
 function msFilterBar(){
-  const months=msGetMonths();
-  const moOpts=months.map(m=>`<option value="${m}" ${msMonth===m?'selected':''}>${m}</option>`).join('');
+  const moOpts=msGetMonths().map(m=>`<option value="${m}" ${msMonth===m?'selected':''}>${m}</option>`).join('');
+  const drOpts=msGetDrugs().map(d=>`<option value="${d}" ${msDrug===d?'selected':''}>${d}</option>`).join('');
+  const stOpts=msGetStatuses().map(s=>`<option value="${s}" ${msStatus===s?'selected':''}>${s}</option>`).join('');
+  const any=msMonth||msDrug||msStatus;
   return `<div class="ms-filter-bar">
     <div class="ms-filter-group">
       <span class="ms-filter-label">📅 Month</span>
@@ -1098,12 +1109,27 @@ function msFilterBar(){
         ${moOpts}
       </select>
     </div>
-    ${msMonth?`<button class="ms-reset" onclick="msReset()">↺ All</button>`:''}
+    <div class="ms-filter-group">
+      <span class="ms-filter-label">💊 Drug</span>
+      <select class="ms-select" onchange="msSD(this.value)">
+        <option value="">All Drugs</option>
+        ${drOpts}
+      </select>
+    </div>
+    <div class="ms-filter-group">
+      <span class="ms-filter-label">🏷️ Status</span>
+      <select class="ms-select" onchange="msSS(this.value)">
+        <option value="">All Statuses</option>
+        ${stOpts}
+      </select>
+    </div>
+    ${any?`<button class="ms-reset" onclick="msReset()">↺ Reset</button>`:''}
   </div>`;
 }
 function msSM(v){msMonth=v;renderMSContent();}
-function msReset(){msMonth='';renderMSContent();}
-function renderMS(){
+function msSD(v){msDrug=v;renderMSContent();}
+function msSS(v){msStatus=v;renderMSContent();}
+function msReset(){msMonth='';msDrug='';msStatus='';renderMSContent();}function renderMS(){
   renderMSSidebar();
   renderMSContent();
 }
