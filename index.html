@@ -3243,7 +3243,9 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
   //          col[16]=phone, col[23]=cgm_type, col[19]=resolution
   tkRaw.slice(1).forEach(r=>{
     let d=cgmParseDate(r[7]||'');
-    if(!d) d=cgmParseDate(r[14]||'');
+    const dMo=cgmParseDate(r[14]||'');
+    if(d&&dMo&&d.label!==dMo.label) d=dMo;
+    if(!d) d=dMo;
     if(!d) return;
     const phones=cgmNormPhone(r[16]||'');
     let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat)||tat<0)tat=null;}catch(e){}
