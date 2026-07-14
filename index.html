@@ -3247,7 +3247,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     if(!d) return;
     const phones=cgmNormPhone(r[16]||'');
     let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat)||tat<0)tat=null;}catch(e){}
-    const cgmRaw=cgmSV(r[23]||'');
+    const cgmRaw=cgmSV(r[22]||'');
     tks.push({phone:phones[0]||'',cgm:cgmRaw==='Diasens'?'diasens':'goodflip',
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[6]||''),
       level2:cgmSV(r[4]||''),tat,resolution:cgmSV(r[19]||''),hasPhone:phones.length>0});
