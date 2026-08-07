@@ -1365,6 +1365,9 @@ function hoDownloadReport(){
   const p=(a,b)=>b>0?Math.round(a/b*100):0;
   const prog=hoProgram?((HO_PROGS.find(x=>x.key===hoProgram)||{}).name||hoProgram):'All Programmes';
   const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const hoMedR=a=>{if(!a.length)return 0;const s=a.slice().sort((x,y)=>x-y);const n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;};
+  const hoMeanR=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:0;
+  const pct=(a,b)=>b>0?Math.round(a/b*100)+'%':'N/A';
   const L=[];
   L.push(['TatvaCare — MySaathi Health Outcomes']);
   L.push(['Programme',prog]);L.push(['Generated',new Date().toLocaleString()]);L.push([]);
@@ -1382,8 +1385,80 @@ function hoDownloadReport(){
   L.push(['All BCA patients',p(d.compare.all[0],d.compare.all[1])+'%',d.compare.all[0]+'/'+d.compare.all[1]]);L.push([]);
   L.push(['WEIGHT CHANGE MONTH-ON-MONTH','Avg change (kg)']);
   d.mom.forEach(m=>L.push(['Month '+m.label.slice(1),m.avg.toFixed(2)]));L.push([]);
-  L.push(['BODY-COMPOSITION IMPROVEMENT','% improved','Median change']);
+  L.push(['BODY-COMPOSITION IMPROVEMENT','% improved','Avg/Median change']);
   d.metrics.forEach(m=>L.push([m.label,p(m.imp,m.tot)+'%',(m.avg>0?'+':'')+m.avg.toFixed(2)]));
+  L.push([]);L.push([]);
+
+  // ══════════════════════════════════════════
+  // NEW SECTIONS — Drug-wise analysis (all eligible patients, no coach filter)
+  // ══════════════════════════════════════════
+  function drugSection(disFilter, label){
+    const rows=(HO_BCA||[]).filter(r=>!disFilter||r.disease===disFilter);
+    const byp={};rows.forEach(r=>{(byp[r.pid]=byp[r.pid]||[]).push(r);});
+    function clean(recs){const ws=recs.map(r=>r.w).filter(w=>w&&w>0).sort((a,b)=>a-b);if(!ws.length)return[];
+      const md=ws.length%2?ws[(ws.length-1)/2]:(ws[ws.length/2-1]+ws[ws.length/2])/2;const lo=md*0.9,hi=md*1.1;
+      return recs.filter(r=>r.w&&r.w>=lo&&r.w<=hi&&r.d).sort((a,b)=>a.d-b.d);}
+    let eligible=0,dropped=0;
+    const iW=[],cW=[],chW=[],iBMI=[],cBMI=[],chBMI=[],iFM=[],cFM=[],chFM=[];
+    const momL={};const cohA={0:[],1:[],2:[],3:[]};let cohAn=0;const cohBch=[];let cohBn=0;
+    Object.keys(byp).forEach(pid=>{
+      const cl=clean(byp[pid]);if(cl.length<2)return;
+      const span=(cl[cl.length-1].d-cl[0].d)/HO_DAY;if(span<14)return;
+      eligible++;
+      const wCh=cl[cl.length-1].w-cl[0].w;const wd=wCh<-0.1;if(wd)dropped++;
+      iW.push(cl[0].w);cW.push(cl[cl.length-1].w);chW.push(wCh);
+      const bv=cl.filter(r=>r.bmi&&r.bmi>0);
+      if(bv.length>=2){iBMI.push(bv[0].bmi);cBMI.push(bv[bv.length-1].bmi);chBMI.push(bv[bv.length-1].bmi-bv[0].bmi);}
+      const fv=cl.filter(r=>r.fat_mass&&r.fat_mass>0);
+      if(fv.length>=2){iFM.push(fv[0].fat_mass);cFM.push(fv[fv.length-1].fat_mass);chFM.push(fv[fv.length-1].fat_mass-fv[0].fat_mass);}
+      const bd=cl[0].d;const mb={};
+      cl.forEach(r=>{const mi=Math.floor((r.d-bd)/HO_DAY/30);(mb[mi]=mb[mi]||[]).push(r.w-cl[0].w);});
+      if(wd){Object.keys(mb).forEach(k=>{const m=+k;(momL[m]=momL[m]||[]).push(hoMeanR(mb[m]));});}
+      const hm=m=>mb[m]&&mb[m].length>0;
+      if(hm(0)&&hm(1)&&hm(2)&&hm(3)){cohAn++;for(let m=0;m<=3;m++)cohA[m].push(hoMeanR(mb[m]));}
+      if(hm(0)&&hm(3)&&!hm(1)&&!hm(2)){cohBn++;cohBch.push(hoMeanR(mb[3]));}
+    });
+
+    L.push(['════════════════════════════════════════']);
+    L.push(['DRUG-WISE SUMMARY: '+label]);
+    L.push(['════════════════════════════════════════']);
+    L.push(['Metric','Value','Count','% of eligible']);
+    L.push(['Eligible patients (monitored cohort)',eligible,'','']);
+    L.push(['Patients who reduced weight',dropped,dropped,pct(dropped,eligible)]);
+    L.push([]);
+    L.push(['WEIGHT','Initial (avg)','Current (avg)','Avg change','Patients']);
+    L.push(['',iW.length?hoMeanR(iW).toFixed(2):'',cW.length?hoMeanR(cW).toFixed(2):'',chW.length?hoMeanR(chW).toFixed(2):'',iW.length]);
+    L.push([]);
+    L.push(['FAT MASS','Initial (median)','Follow-up (median)','Median change','Patients']);
+    L.push(['',iFM.length?hoMedR(iFM).toFixed(2):'',cFM.length?hoMedR(cFM).toFixed(2):'',chFM.length?hoMedR(chFM).toFixed(2):'',iFM.length]);
+    L.push([]);
+    L.push(['BMI','Initial (avg)','Follow-up (avg)','Avg change','Patients']);
+    L.push(['',iBMI.length?hoMeanR(iBMI).toFixed(2):'',cBMI.length?hoMeanR(cBMI).toFixed(2):'',chBMI.length?hoMeanR(chBMI).toFixed(2):'',iBMI.length]);
+    L.push([]);
+
+    L.push(['MONTH-ON-MONTH WEIGHT REDUCTION (weight losers only)']);
+    L.push(['Month','Avg change (kg)','Patients','% of eligible']);
+    const mk=Object.keys(momL).map(Number).sort((a,b)=>a-b).slice(0,6);
+    mk.forEach(k=>L.push(['Month '+k,hoMeanR(momL[k]).toFixed(2),momL[k].length,pct(momL[k].length,eligible)]));
+    L.push([]);
+
+    L.push(['COHORT A: Patients with BCA in all 4 months (M0-M3)']);
+    L.push(['Patients in cohort',cohAn,'',pct(cohAn,eligible)]);
+    L.push(['Month','Avg weight change (kg)','Patients']);
+    for(let m=0;m<=3;m++) L.push(['Month '+m,cohA[m].length?hoMeanR(cohA[m]).toFixed(2):'',cohA[m].length]);
+    L.push([]);
+
+    L.push(['COHORT B: Patients with BCA in month 0 and month 3 only']);
+    L.push(['Patients in cohort',cohBn,'',pct(cohBn,eligible)]);
+    if(cohBn) L.push(['Avg weight change (M0 to M3)',hoMeanR(cohBch).toFixed(2),cohBn]);
+    L.push([]);
+  }
+
+  drugSection('','ALL PROGRAMMES');
+  drugSection('Diabetes','SEMAGLYN');
+  drugSection('Fatty Liver - NASH','MASHEMA');
+  drugSection('PCOS','ALTERME');
+
   const csv=L.map(r=>r.map(q).join(',')).join('\n');
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
