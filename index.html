@@ -1431,6 +1431,8 @@ function hoDownloadReport(){
     L.push([]);
     L.push(['FAT MASS','Initial (median)','Follow-up (median)','Median change','Patients']);
     L.push(['',iFM.length?hoMedR(iFM).toFixed(2):'',cFM.length?hoMedR(cFM).toFixed(2):'',chFM.length?hoMedR(chFM).toFixed(2):'',iFM.length]);
+    const fmReduced=chFM.filter(v=>v<0);
+    L.push(['Patients who reduced fat mass',fmReduced.length,pct(fmReduced.length,iFM.length),'Median reduction: '+(fmReduced.length?hoMedR(fmReduced).toFixed(2)+' kg':'N/A'),'of '+iFM.length+' eligible']);
     L.push([]);
     L.push(['BMI','Initial (avg)','Follow-up (avg)','Avg change','Patients']);
     L.push(['',iBMI.length?hoMeanR(iBMI).toFixed(2):'',cBMI.length?hoMeanR(cBMI).toFixed(2):'',chBMI.length?hoMeanR(chBMI).toFixed(2):'',iBMI.length]);
