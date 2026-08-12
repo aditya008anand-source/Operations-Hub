@@ -1565,7 +1565,8 @@ function hoDownloadReport(){
           if((cl[cl.length-1].d-cl[0].d)/HO_DAY<14)return;
           const hasFirst=cl.some(r=>r.d.getMonth()+1===cohCal);
           const hasLast=cl.some(r=>r.d.getMonth()+1===lastCal);
-          if(!hasFirst||!hasLast)return;
+          const hasMid=cl.some(r=>{const m=r.d.getMonth()+1;return m>cohCal&&m<lastCal;});
+          if(!hasFirst||!hasLast||hasMid)return;
           scCount++;
           const bw=cl[0].w;
           const bbmi=(cl[0].bmi&&cl[0].bmi>0)?cl[0].bmi:null;
