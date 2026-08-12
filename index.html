@@ -1463,6 +1463,116 @@ function hoDownloadReport(){
   drugSection('Fatty Liver - NASH','MASHEMA');
   drugSection('PCOS','ALTERME');
 
+  // ══════════════════════════════════════════
+  // COHORT ANALYSIS — by Kit Dispatch Month, drug-wise
+  // ══════════════════════════════════════════
+  (function buildCohortReport(){
+    // MS completed patients: phone -> {month, drug}
+    const MO_NORM={'march':'March','april':'April','may':'May','june':'June','july':'July','aug':'August','august':'August'};
+    const CAL={'March':3,'April':4,'May':5,'June':6,'July':7,'August':8};
+    const COHORT_MONTHS=['March','April','May','June','July'];
+    const msCoh={};// phone->{month,drug}
+    try{
+      const msRaw=liveParseCSVRaw('');// need live data — use HO_MSANY source
+    }catch(e){}
+    // We already have HO_BCA. For MS cohort data we need to re-fetch synchronously from the stored raw.
+    // Since hoLoadData already fetched ms, we'll parse from a second pass.
+    // Actually, we need the MS raw with col 3 (phone), col 13 (kit dispatch month), col 14 (status), col 7 (drug).
+    // HO_MSANY/HO_MSPROG only store phone sets, not month. So let's store it during hoLoadData.
+    // WORKAROUND: fetch MS again synchronously via XMLHttpRequest.
+    let msRows=[];
+    try{
+      const xhr=new XMLHttpRequest();xhr.open('GET',LIVE_URLS.ms,false);xhr.send();
+      if(xhr.status===200) msRows=liveParseCSVRaw(xhr.responseText);
+    }catch(e){}
+
+    const DRUG_MAP=[{key:'Diabetes',name:'Semaglyn',match:'semaglyn'},{key:'Fatty Liver - NASH',name:'Mashema',match:'mashema'},{key:'PCOS',name:'Alterme',match:'alterme'}];
+    for(let i=1;i<msRows.length;i++){
+      const r=msRows[i];if(!r)continue;
+      const st=(r[14]||'').toLowerCase();if(st.indexOf('complete')<0)continue;
+      const ph=hoNorm(r[3]);if(!ph)continue;
+      const km=MO_NORM[(r[13]||'').trim().toLowerCase()]||'';
+      if(!km)continue;
+      const drugRaw=(r[7]||'').toLowerCase();
+      const dp=DRUG_MAP.find(d=>drugRaw.indexOf(d.match)>=0);
+      msCoh[ph]={month:km,drug:dp?dp.key:'',drugName:dp?dp.name:'Other'};
+    }
+
+    // BCA by contact
+    const bcaByCon={};
+    (HO_BCA||[]).forEach(r=>{if(r.contact)(bcaByCon[r.contact]=bcaByCon[r.contact]||[]).push(r);});
+
+    function cleanR(recs){const ws=recs.map(r=>r.w).filter(w=>w&&w>0).sort((a,b)=>a-b);if(!ws.length)return[];
+      const md=ws.length%2?ws[(ws.length-1)/2]:(ws[ws.length/2-1]+ws[ws.length/2])/2;const lo=md*0.9,hi=md*1.1;
+      return recs.filter(r=>r.w&&r.w>=lo&&r.w<=hi&&r.d).sort((a,b)=>a.d-b.d);}
+
+    function cohortBlock(cohMonth, disFilter, label){
+      const cohCal=CAL[cohMonth];
+      const phones=Object.keys(msCoh).filter(ph=>{
+        const c=msCoh[ph];
+        return c.month===cohMonth && (!disFilter || c.drug===disFilter);
+      });
+      const totalPts=phones.length;
+      let bcaReadings=0;const bcaUsers=new Set();let eligible=0;
+      const outMonths=COHORT_MONTHS.filter(m=>CAL[m]>=cohCal);
+      const cumW={},cumBMI={},cumFM={};
+      outMonths.forEach(m=>{cumW[m]=[];cumBMI[m]=[];cumFM[m]=[];});
+
+      phones.forEach(ph=>{
+        const recs=bcaByCon[ph];if(!recs)return;
+        bcaReadings+=recs.length;bcaUsers.add(ph);
+        const cl=cleanR(recs);if(cl.length<2)return;
+        if((cl[cl.length-1].d-cl[0].d)/HO_DAY<14)return;
+        eligible++;
+        const bw=cl[0].w;
+        const bbmi=(cl[0].bmi&&cl[0].bmi>0)?cl[0].bmi:null;
+        const fmVals=cl.filter(r=>r.fat_mass&&r.fat_mass>0);
+        const bfm=fmVals.length?fmVals[0].fat_mass:null;
+
+        outMonths.forEach(om=>{
+          const omCal=CAL[om];
+          const upto=cl.filter(r=>r.d.getMonth()+1<=omCal);
+          if(!upto.length)return;
+          const latest=upto[upto.length-1];
+          cumW[om].push(latest.w-bw);
+          if(bbmi&&latest.bmi&&latest.bmi>0) cumBMI[om].push(latest.bmi-bbmi);
+          if(bfm){
+            const fmUpto=cl.filter(r=>r.fat_mass&&r.fat_mass>0&&r.d.getMonth()+1<=omCal);
+            if(fmUpto.length) cumFM[om].push(fmUpto[fmUpto.length-1].fat_mass-bfm);
+          }
+        });
+      });
+
+      L.push([cohMonth+' Cohort — '+label]);
+      L.push(['Total patients',totalPts,'BCA readings',bcaReadings,'Unique BCA users',bcaUsers.size,'Eligible (monitored)',eligible]);
+      L.push(['Month','Weight avg change (kg)','Weight patients','BMI avg change','BMI patients','Fat mass median change (kg)','Fat mass patients']);
+      outMonths.forEach(om=>{
+        L.push(['Up to '+om,
+          cumW[om].length?hoMeanR(cumW[om]).toFixed(2):'',cumW[om].length,
+          cumBMI[om].length?hoMeanR(cumBMI[om]).toFixed(2):'',cumBMI[om].length,
+          cumFM[om].length?hoMedR(cumFM[om]).toFixed(2):'',cumFM[om].length]);
+      });
+      L.push([]);
+    }
+
+    L.push([]);L.push([]);
+    L.push(['════════════════════════════════════════════════════════════════']);
+    L.push(['COHORT ANALYSIS BY COMPLETION MONTH']);
+    L.push(['Patients grouped by Kit Dispatch Month, cumulative BCA outcomes']);
+    L.push(['════════════════════════════════════════════════════════════════']);
+    L.push([]);
+
+    COHORT_MONTHS.forEach(cm=>{
+      L.push(['──────────────────────────────────']);
+      L.push([cm.toUpperCase()+' COHORT']);
+      L.push(['──────────────────────────────────']);
+      cohortBlock(cm,'','All Programmes');
+      cohortBlock(cm,'Diabetes','Semaglyn');
+      cohortBlock(cm,'Fatty Liver - NASH','Mashema');
+      cohortBlock(cm,'PCOS','Alterme');
+    });
+  })();
+
   const csv=L.map(r=>r.map(q).join(',')).join('\n');
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
