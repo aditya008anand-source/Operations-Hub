@@ -1553,6 +1553,45 @@ function hoDownloadReport(){
           cumFM[om].length?hoMedR(cumFM[om]).toFixed(2):'',cumFM[om].length]);
       });
       L.push([]);
+
+      // Sub-cohort: patients with BCA in first month AND last month (July) only
+      const lastMonth='July';const lastCal=CAL[lastMonth];
+      if(cohMonth!==lastMonth && outMonths.indexOf(lastMonth)>=0){
+        const scW={},scBMI={},scFM={};let scCount=0;
+        outMonths.forEach(m=>{scW[m]=[];scBMI[m]=[];scFM[m]=[];});
+        phones.forEach(ph=>{
+          const recs=bcaByCon[ph];if(!recs)return;
+          const cl=cleanR(recs);if(cl.length<2)return;
+          if((cl[cl.length-1].d-cl[0].d)/HO_DAY<14)return;
+          const hasFirst=cl.some(r=>r.d.getMonth()+1===cohCal);
+          const hasLast=cl.some(r=>r.d.getMonth()+1===lastCal);
+          if(!hasFirst||!hasLast)return;
+          scCount++;
+          const bw=cl[0].w;
+          const bbmi=(cl[0].bmi&&cl[0].bmi>0)?cl[0].bmi:null;
+          const fmV=cl.filter(r=>r.fat_mass&&r.fat_mass>0);
+          const bfm=fmV.length?fmV[0].fat_mass:null;
+          outMonths.forEach(om=>{
+            const omCal=CAL[om];
+            const upto=cl.filter(r=>r.d.getMonth()+1<=omCal);
+            if(!upto.length)return;
+            const latest=upto[upto.length-1];
+            scW[om].push(latest.w-bw);
+            if(bbmi&&latest.bmi&&latest.bmi>0) scBMI[om].push(latest.bmi-bbmi);
+            if(bfm){const fu=cl.filter(r=>r.fat_mass&&r.fat_mass>0&&r.d.getMonth()+1<=omCal);if(fu.length)scFM[om].push(fu[fu.length-1].fat_mass-bfm);}
+          });
+        });
+        L.push(['SUB-COHORT: BCA in '+cohMonth+' AND '+lastMonth+' — '+label]);
+        L.push(['Patients in sub-cohort',scCount,'',pct(scCount,eligible)+' of eligible']);
+        L.push(['Month','Weight avg change (kg)','Weight patients','BMI avg change','BMI patients','Fat mass median change (kg)','Fat mass patients']);
+        outMonths.forEach(om=>{
+          L.push(['Up to '+om,
+            scW[om].length?hoMeanR(scW[om]).toFixed(2):'',scW[om].length,
+            scBMI[om].length?hoMeanR(scBMI[om]).toFixed(2):'',scBMI[om].length,
+            scFM[om].length?hoMedR(scFM[om]).toFixed(2):'',scFM[om].length]);
+        });
+        L.push([]);
+      }
     }
 
     L.push([]);L.push([]);
