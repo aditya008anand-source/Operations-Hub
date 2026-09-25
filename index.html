@@ -1468,9 +1468,9 @@ function hoDownloadReport(){
   // ══════════════════════════════════════════
   (function buildCohortReport(){
     // MS completed patients: phone -> {month, drug}
-    const MO_NORM={'march':'March','april':'April','may':'May','june':'June','july':'July','aug':'August','august':'August'};
-    const CAL={'March':3,'April':4,'May':5,'June':6,'July':7,'August':8};
-    const COHORT_MONTHS=['March','April','May','June','July'];
+    const MO_NORM={'march':'March','april':'April','may':'May','june':'June','july':'July','aug':'August','august':'August','sep':'September','september':'September'};
+    {'March':3,'April':4,'May':5,'June':6,'July':7,'August':8,'September':9};
+    const COHORT_MONTHS=['March','April','May','June','July','August','September'];
     const msCoh={};// phone->{month,drug}
     try{
       const msRaw=liveParseCSVRaw('');// need live data — use HO_MSANY source
@@ -1555,7 +1555,7 @@ function hoDownloadReport(){
       L.push([]);
 
       // Sub-cohort: patients with BCA in first month AND last month ONLY (no middle months)
-      const lastMonth='July';const lastCal=CAL[lastMonth];
+            const lastMonth='September';const lastCal=CAL[lastMonth];
       if(cohMonth!==lastMonth && outMonths.indexOf(lastMonth)>=0 && lastCal>cohCal+1){
         const scW1=[],scWL=[],scBMI1=[],scBMIL=[],scFM1=[],scFML=[];let scCount=0;
         phones.forEach(ph=>{
