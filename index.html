@@ -3449,7 +3449,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
   dbRaw.slice(1).forEach(r=>{
     const d=cgmParseDate(r[4]||''); if(!d) return;
     const phones=cgmNormPhone(r[1]||'');
-    db.push({phone:phones[0]||'',cgm:(r[6]||'').toLowerCase()==='diasens'?'diasens':'goodflip',
+    db.push({phone:phones[0]||'',cgm:((r[6]||'').toLowerCase()==='diasens'?'diasens':(r[6]||'').toLowerCase()==='glucolive'?'glucolive':'goodflip'),
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[7]||''),name:cgmSV(r[0]||'')});
   });
 
@@ -3458,7 +3458,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const d=cgmParseDate(r[6]||''); if(!d) return;
     const phones=cgmNormPhone(r[2]||'');
     const cgmRaw=(r[7]||'').toLowerCase();
-    ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
+    ins.push({phone:phones[0]||'',cgm:cgmRaw.includes('diasens')?'diasens':(cgmRaw.includes('glucolive')?'glucolive':'goodflip'),
       y:d.y,mo:d.mo,label:d.label,status:(r[4]||'').toLowerCase()});
   });
 
@@ -3473,7 +3473,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const phones=cgmNormPhone(r[16]||'');
     let tat=null; try{tat=parseFloat(r[10]);if(isNaN(tat)||tat<0)tat=null;}catch(e){}
     const cgmRaw=cgmSV(r[22]||'')||cgmSV(r[23]||'');
-    tks.push({phone:phones[0]||'',cgm:cgmRaw.toLowerCase().includes('diasens')?'diasens':'goodflip',
+    tks.push({phone:phones[0]||'',cgm:cgmRaw.toLowerCase().includes('diasens')?'diasens':(cgmRaw.toLowerCase().includes('glucolive')?'glucolive':'goodflip'),
       y:d.y,mo:d.mo,label:d.label,status:cgmSV(r[6]||''),
       level2:cgmSV(r[4]||''),tat,resolution:cgmSV(r[19]||''),hasPhone:phones.length>0});
   });
@@ -3484,7 +3484,7 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const d=cgmParseDate(r[4]||''); if(!d) return;
     const phones=cgmNormPhone(r[1]||'');
     const cgmRaw=(r[8]||'').toLowerCase();
-    rps.push({phones,cgm:cgmRaw.includes('diasens')?'diasens':'goodflip',
+    rps.push({phones,cgm:cgmRaw.includes('diasens')?'diasens':(cgmRaw.includes('glucolive')?'glucolive':'goodflip'),
       y:d.y,mo:d.mo,label:d.label,
       product:(r[2]||'').toLowerCase(),
       approvedBy:cgmSV(r[3]||''),name:cgmSV(r[0]||'')});
@@ -3497,6 +3497,9 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
   const months=allMos.sort((a,b)=>{const ia=MO_ORDER.indexOf(a),ib=MO_ORDER.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});
 
   // Aggregate per month per CGM
+  // Build install phone set for self-install detection
+  const insPhones = new Set(ins.map(r=>r.phone).filter(Boolean));
+
   function agg(mo, cgm){
     const dbF  = db.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
     const insF = ins.filter(r=>(!mo||r.label===mo)&&r.cgm===cgm);
@@ -3506,11 +3509,12 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const dbTotal   = dbF.length;
     const inBooked  = insF.length;
     const inDone    = insF.filter(r=>r.status==='completed').length;
+    const teamInstall = dbF.filter(r=>r.phone&&insPhones.has(r.phone)).length;
+    const selfInstall = dbTotal - teamInstall;
     const tkTotal   = tkF.length;
     const tkClosed  = tkF.filter(r=>r.status==='Closed').length;
     const tkTech    = tkF.filter(r=>r.level2==='Tech Issue').length;
     const tkNonTech = tkF.filter(r=>r.level2==='Non-Tech Issue').length;
-    // TAT: include 0 (instant resolution), exclude null only
     const techRows    = tkF.filter(r=>r.level2==='Tech Issue'&&r.tat!==null);
     const nonTechRows = tkF.filter(r=>r.level2==='Non-Tech Issue'&&r.tat!==null);
     const avgTAT      = techRows.length>0?Math.round(techRows.reduce((s,r)=>s+r.tat,0)/techRows.length):0;
@@ -3525,17 +3529,20 @@ function cgmProcess(dbRaw, inRaw, tkRaw, rpRaw){
     const pctTech    = dbTotal>0?Math.round(tkTech/dbTotal*100):0;
     const pctNonTech = dbTotal>0?Math.round(tkNonTech/dbTotal*100):0;
 
-    // Issue type breakdown
     const issueTypes={};
     tkF.forEach(r=>{if(r.level2){issueTypes[r.level2]=(issueTypes[r.level2]||0)+1;}});
 
-    return{dbTotal,inBooked,inDone,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
-           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,pctTech,pctNonTech,issueTypes};
+    // Tickets vs install type
+    const tkTeamPhones = new Set(dbF.filter(r=>r.phone&&insPhones.has(r.phone)).map(r=>r.phone));
+    const tkVsTeam = tkF.filter(r=>r.phone&&tkTeamPhones.has(r.phone)).length;
+    const tkVsSelf = tkTotal - tkVsTeam;
+
+    return{dbTotal,inBooked,inDone,teamInstall,selfInstall,tkTotal,tkClosed,tkTech,tkNonTech,avgTAT,avgNonTechTAT,
+           rpTotal,rpSensor,rpTrans,pctInstall,pctTicket,pctReplace,pctTech,pctNonTech,issueTypes,tkVsTeam,tkVsSelf};
   }
 
-  // Build lookup for all months + overall
   const lookup={};
-  ['goodflip','diasens'].forEach(cgm=>{
+  ['goodflip','diasens','glucolive'].forEach(cgm=>{
     lookup[cgm]={overall:agg('',cgm), monthly:{}};
     months.forEach(mo=>{ lookup[cgm].monthly[mo]=agg(mo,cgm); });
   });
@@ -3564,13 +3571,17 @@ function cgmKPI(label, value, sub, color='var(--brand)'){
 // ── Summary Tab ──
 function buildCGMSummary(){
   const months = cgmFilter ? [cgmFilter] : (cgmData?.months||[]).slice(-3);
-  const cgms   = ['goodflip','diasens'];
+  const cgms   = ['goodflip','diasens','glucolive'];
   const METRICS = [
     {key:'dbTotal',      label:'Total patients on DB'},
     {key:'inBooked',     label:'Booked for installation'},
     {key:'inDone',       label:'Completed'},
+    {key:'teamInstall',  label:'Team installed'},
+    {key:'selfInstall',  label:'Self installed'},
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
+    {key:'tkVsTeam',     label:'Tickets — team installed'},
+    {key:'tkVsSelf',     label:'Tickets — self installed'},
     {key:'tkTech',       label:'Tech'},
     {key:'avgTAT',       label:'Tech resolution TAT', suffix:'hrs'},
     {key:'pctTech',      label:'% Tech ticket coverage', pct:true},
@@ -3585,7 +3596,7 @@ function buildCGMSummary(){
 
   let html = `<div class="page-header">
     <div class="page-title">📊 CGM Summary Report</div>
-    <div class="page-sub">Goodflip & Diasens · ${cgmFilter||'Last 3 months'}</div>
+    <div class="page-sub">Goodflip, Diasens & Glucolive · ${cgmFilter||'Last 3 months'}</div>
   </div>
   ${cgmFilterBar()}
   <div style="overflow-x:auto;margin-top:20px">
@@ -3595,9 +3606,9 @@ function buildCGMSummary(){
         <th style="padding:10px 14px;text-align:left;min-width:200px">Metric</th>`;
 
   // Headers: GoodFlip months + Diasens months
-  ['GoodFlip','Diasens'].forEach(cgmLabel=>{
+  ['GoodFlip','Diasens','Glucolive'].forEach(cgmLabel=>{
     months.forEach(mo=>{
-      html+=`<th style="padding:10px 8px;text-align:center;border-left:${cgmLabel==='Diasens'?'3px solid rgba(255,255,255,.4)':'1px solid rgba(255,255,255,.2)'}">${cgmLabel}<br><span style="font-weight:400;font-size:11px">${mo}</span></th>`;
+      html+=`<th style="padding:10px 8px;text-align:center;border-left:${cgmLabel!=='GoodFlip'?'3px solid rgba(255,255,255,.4)':'1px solid rgba(255,255,255,.2)'}">${cgmLabel}<br><span style="font-weight:400;font-size:11px">${mo}</span></th>`;
     });
   });
 
@@ -3608,7 +3619,7 @@ function buildCGMSummary(){
     html+=`<tr style="background:${bg}">
       <td style="padding:9px 14px;font-weight:500;color:var(--text);border-right:1px solid var(--border)">${metric.label}</td>`;
 
-    ['goodflip','diasens'].forEach((cgm,ci)=>{
+    ['goodflip','diasens','glucolive'].forEach((cgm,ci)=>{
       months.forEach((mo,mi)=>{
         const d = cgmGetData(cgm, mo);
         const v = d?d[metric.key]:0;
@@ -3651,7 +3662,7 @@ function initCGMSummaryCharts(){
   const labs = moFilter;
 
   function ds(cgm, key, color){
-    return{label:cgm==='goodflip'?'Goodflip':'Diasens',
+    return{label:cgm==='goodflip'?'Goodflip':(cgm==='diasens'?'Diasens':'Glucolive'),
       data:labs.map(m=>(cgmGetData(cgm,m)||{})[key]||0),
       borderColor:color,backgroundColor:color+'33',
       tension:.3,fill:true,pointRadius:4};
@@ -3669,6 +3680,7 @@ function initCGMSummaryCharts(){
     new Chart(el,{type:'line',data:{labels:labs,datasets:[
       ds('goodflip',key,'#1a6b4a'),
       ds('diasens',key,'#0ea5e9'),
+      ds('glucolive',key,'#f59e0b'),
     ]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#64748b',font:{size:11}}}},
       scales:{x:{ticks:{color:'#64748b'}},y:{beginAtZero:true,ticks:{color:'#64748b'}}}}});
   });
@@ -3678,11 +3690,11 @@ function initCGMSummaryCharts(){
 function buildCGMTab(cgm){
   const d = cgmGetData(cgm, cgmFilter);
   if(!d) return '<div style="padding:40px;text-align:center;color:var(--muted)">Loading data...</div>';
-  const label = cgm==='goodflip'?'Goodflip CGM':'Diasens CGM';
+  const label = cgm==='goodflip'?'Goodflip CGM':(cgm==='diasens'?'Diasens CGM':'Glucolive CGM');
   const mo = cgmFilter||'All Months';
 
   return `<div class="page-header">
-    <div class="page-title">${cgm==='goodflip'?'💚':'💙'} ${label}</div>
+    <div class="page-title">${cgm==='goodflip'?'💚':(cgm==='diasens'?'💙':'🟡')} ${label}</div>
     <div class="page-sub">${mo}</div>
   </div>
   ${cgmFilterBar()}
@@ -3778,7 +3790,7 @@ function setCGMFilter(val){ cgmFilter=val; renderCGMModule(); }
 
 // ── Sub-tab Nav ──
 function buildCGMNav(){
-  const tabs=[{id:'summary',label:'📊 Summary'},{id:'goodflip',label:'💚 Goodflip CGM'},{id:'diasens',label:'💙 Diasens CGM'}];
+  const tabs=[{id:'summary',label:'📊 Summary'},{id:'goodflip',label:'💚 Goodflip CGM'},{id:'diasens',label:'💙 Diasens CGM'},{id:'glucolive',label:'🟡 Glucolive CGM'}];
   return `<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--surface);border-radius:12px 12px 0 0;overflow:hidden">
     ${tabs.map(t=>`<button onclick="setCGMTab('${t.id}')" style="padding:12px 20px;border:none;cursor:pointer;font-size:13px;font-weight:${cgmTab===t.id?'600':'400'};color:${cgmTab===t.id?'var(--brand)':'var(--muted)'};background:${cgmTab===t.id?'#fff':'transparent'};border-bottom:${cgmTab===t.id?'2px solid var(--brand)':'2px solid transparent'};margin-bottom:-2px;transition:all .2s">${t.label}</button>`).join('')}
   </div>`;
@@ -3826,8 +3838,12 @@ function cgmDownloadExcel(){
     {key:'dbTotal',      label:'Total patients on DB'},
     {key:'inBooked',     label:'Booked for installation'},
     {key:'inDone',       label:'Completed'},
+    {key:'teamInstall',  label:'Team installed'},
+    {key:'selfInstall',  label:'Self installed'},
     {key:'tkTotal',      label:'Ticket received'},
     {key:'tkClosed',     label:'Ticket closed'},
+    {key:'tkVsTeam',     label:'Tickets — team installed'},
+    {key:'tkVsSelf',     label:'Tickets — self installed'},
     {key:'tkTech',       label:'Tech'},
     {key:'pctTech',      label:'% Tech ticket coverage'},
     {key:'avgTAT',       label:'Tech resolution TAT (hrs)'},
@@ -3842,9 +3858,9 @@ function cgmDownloadExcel(){
 
   // Build header row
   const header=['Metric'];
-  const cgms=['goodflip','diasens'];
+  const cgms=['goodflip','diasens','glucolive'];
   cgms.forEach(cgm=>{
-    checked.forEach(mo=>header.push(`${cgm==='goodflip'?'GoodFlip':'Diasens'} - ${mo}`));
+    checked.forEach(mo=>header.push(`${cgm==='goodflip'?'GoodFlip':(cgm==='diasens'?'Diasens':'Glucolive')} - ${mo}`));
   });
 
   // Build data rows
@@ -3898,7 +3914,7 @@ async function loadCGMData(){
     }
   }catch(e){
     console.error('CGM load error:',e);
-    cgmData={months:[],lookup:{goodflip:{overall:{},monthly:{}},diasens:{overall:{},monthly:{}}}};
+    cgmData={months:[],lookup:{goodflip:{overall:{},monthly:{}},diasens:{overall:{},monthly:{}},glucolive:{overall:{},monthly:{}}}};
   }
   cgmLoading=false;
   renderCGMModule();
